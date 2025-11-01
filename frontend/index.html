@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>MMO Frontend</title>
+</head>
+<body>
+  <h1>MMO Client</h1>
+  <button onclick="movePlayer()">Move Player</button>
+  <pre id="log"></pre>
+
+  <script>
+    const ws = new WebSocket("ws://localhost:3000");
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      document.getElementById("log").textContent = JSON.stringify(data, null, 2);
+    };
+
+    function movePlayer() {
+      const position = {
+        x: Math.floor(Math.random() * 100),
+        y: Math.floor(Math.random() * 100)
+      };
+      ws.send(JSON.stringify({ type: "move", position }));
+    }
+  </script>
+</body>
+</html>
