@@ -12,6 +12,10 @@ app.get('/api/ping', (req, res) => {
   res.json({ status: 'MMO backend is alive!' });
 });
 
+app.get('/', (req, res) => {
+  res.json({ redirect: 'go to /api/ping for more details' });
+});
+
 const server = app.listen(PORT, () => {
   console.log(`HTTP server running on port ${PORT}`);
 });
