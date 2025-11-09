@@ -1,27 +1,36 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>MMO Frontend</title>
+  <title>MMO Chat</title>
 </head>
 <body>
-  <h1>MMO Client</h1>
-  <button onclick="movePlayer()">Move Player</button>
+  <h1>MMO Chat Client</h1>
+  
+  <input id="chatInput" placeholder="Type message..." />
+  <button onclick="sendChat()">Send Chat</button>
+
   <pre id="log"></pre>
 
   <script>
     const ws = new WebSocket("ws://localhost:3000");
+    const log = document.getElementById("log");
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      document.getElementById("log").textContent = JSON.stringify(data, null, 2);
+
+      if (data.type === "welcome") {
+        log.textContent += `\nWelcome! Your ID: ${data.id}`;
+      }
+
+      if (data.type === "chat") {
+        log.textContent += `\nPlayer ${data.id}: ${data.text}`;
+      }
     };
 
-    function movePlayer() {
-      const position = {
-        x: Math.floor(Math.random() * 100),
-        y: Math.floor(Math.random() * 100)
-      };
-      ws.send(JSON.stringify({ type: "move", position }));
+    function sendChat() {
+      const text = document.getElementById("chatInput").value;
+      ws.send(JSON.stringify({ type: "chat", text }));
+      document.getElementById("chatInput").value = "";
     }
   </script>
 </body>
