@@ -12,7 +12,7 @@
   <pre id="log"></pre>
 
   <script>
-    const ws = new WebSocket("ws://test-ixft.onrender.com/api/ping");
+    const ws = new WebSocket("wss://test-ixft.onrender.com/api/ping");
     const log = document.getElementById("log");
 
     ws.onmessage = (event) => {
