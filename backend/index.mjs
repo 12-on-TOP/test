@@ -12,35 +12,27 @@ app.get('/api/ping', (req, res) => {
   res.json({ status: 'MMO backend is alive!' });
 });
 
-app.get('/', (req, res) => {
-  res.json({ redirect: 'go to /api/ping for more details' });
-});
-
 const server = app.listen(PORT, () => {
   console.log(`HTTP server running on port ${PORT}`);
 });
 
 const wss = new WebSocketServer({ server });
 
-let players = {};
-
 wss.on('connection', (ws) => {
   const id = Date.now();
-  players[id] = { x: 0, y: 0 };
 
   ws.send(JSON.stringify({ type: 'welcome', id }));
 
   ws.on('message', (message) => {
     const data = JSON.parse(message);
-    if (data.type === 'move') {
-      players[id] = data.position;
-      broadcast({ type: 'update', players });
+
+    if (data.type === 'chat') {
+      broadcast({ type: 'chat', id, text: data.text });
     }
   });
 
   ws.on('close', () => {
-    delete players[id];
-    broadcast({ type: 'update', players });
+    broadcast({ type: 'chat', id, text: 'left the chat.' });
   });
 });
 
