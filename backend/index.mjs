@@ -1,8 +1,8 @@
 import { WebSocketServer } from "ws";
 import { gameX, gameY } from "./setup.mjs";
 
-export const gameX = 2000;
-export const gameY = 20000
+export gameX = 2000;
+export gameY = 2000;
 
 // ===== Helpers =====
 const dist = (x1, y1, x2, y2) => Math.hypot(x2 - x1, y2 - y1);
