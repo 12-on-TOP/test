@@ -1,3 +1,6 @@
+// server.js
+import express from "express";
+import { createServer } from "http";
 import { WebSocketServer } from "ws";
 
 export const gameX = 2000;
@@ -11,11 +14,6 @@ const cos = Math.cos;
 const atan2 = Math.atan2;
 const sqrt = Math.sqrt;
 const lerp = (a, b, t) => a + (b - a) * t;
-const WORLD_PADDING = 100;
-const WORLD_MIN_X = -WORLD_PADDING;
-const WORLD_MIN_Y = -WORLD_PADDING;
-const WORLD_MAX_X = gameX + WORLD_PADDING;
-const WORLD_MAX_Y = gameY + WORLD_PADDING;
 
 const VERSION = 1;
 const TYPE_SNAPSHOT = 1;
@@ -26,6 +24,23 @@ const TYPE_MOUSE = 4;
 const REQUIRED_FOODS = 1000;
 const REQUIRED_SNAKES = 10;
 
+// ===== HTTP server (Render-ready) =====
+const app = express();
+app.get("/", (req, res) => res.send("Snake server is running"));
+const server = createServer(app);
+const PORT = process.env.PORT || 8080;
+server.listen(PORT, () => console.log(`Listening on ${PORT}`));
+
+// ===== WebSocket server attached to HTTP =====
+const wss = new WebSocketServer({ server });
+
+// ===== Server state =====
+let snakes = [];
+const foods = [];
+const clientMouseMap = new Map();
+let nextSnakeId = 1;
+
+// ===== Classes =====
 class SnakeSegment {
   constructor(x, y, s, c = [255, 255, 0]) {
     this.x = x;
@@ -50,7 +65,7 @@ class Snake {
     this.width = 800;
     this.height = 600;
     this.active = 1;
-    this.direction = {x:0,y:0};
+    this.direction = { x: 0, y: 0 };
     this.length = 1;
   }
 
@@ -58,36 +73,38 @@ class Snake {
     if (this.scrambled || this.s.length === 0) return;
     const head = this.s[0];
     this.length = this.s.length;
+
     // Bounds check
     if (head.x <= 0 || head.x >= gameX || head.y <= 0 || head.y >= gameY) {
       this.disappear();
       return;
     }
-    const MIN_LENGTH_FOR_BOOST = 1; // minimum length required to keep boosting
 
-if (this.boosting && this.s.length > MIN_LENGTH_FOR_BOOST) {
-  this.def++;
+    const MIN_LENGTH_FOR_BOOST = 1;
 
-  // Drop tail segment every 5 ticks
-  if (this.def % 5 === 0) {
-    const tail = this.s.pop();
-    if (tail) foods.push(new Food(tail.x, tail.y, 1, 0));
-  }
+    if (this.boosting && this.s.length > MIN_LENGTH_FOR_BOOST) {
+      this.def++;
 
-  // Auto-disable boost if snake shrinks too far
-  if (this.s.length <= MIN_LENGTH_FOR_BOOST) {
-    this.boosting = false;
-    this.speed = 2;
-    this.def = 0;
-  }
+      // Drop tail segment every 5 ticks
+      if (this.def % 5 === 0) {
+        const tail = this.s.pop();
+        if (tail) foods.push(new Food(tail.x, tail.y, 1, 0));
+      }
 
-} else {
-  // Reset boost state if not boosting or too short
-  this.boosting = false;
-  this.speed = 2;
-  this.def = 0;
-}
+      // Auto-disable boost if snake shrinks too far
+      if (this.s.length <= MIN_LENGTH_FOR_BOOST) {
+        this.boosting = false;
+        this.speed = 2;
+        this.def = 0;
+      }
+    } else {
+      // Reset boost state if not boosting or too short
+      this.boosting = false;
+      this.speed = 2;
+      this.def = 0;
+    }
 
+    // Movement
     if (this.isBot) {
       const visibleFoods = getFoodsInView(this);
       const target = visibleFoods.length
@@ -100,10 +117,10 @@ if (this.boosting && this.s.length > MIN_LENGTH_FOR_BOOST) {
       const angle = target
         ? atan2(target.y - head.y, target.x - head.x)
         : Math.random() * Math.PI * 2;
-        if (this.active) {
-          this.direction.x = cos(angle);
-          this.direction.y = sin(angle);
-        }
+      if (this.active) {
+        this.direction.x = cos(angle);
+        this.direction.y = sin(angle);
+      }
       head.x += this.direction.x * this.speed;
       head.y += this.direction.y * this.speed;
       if (this.s.length >= 100) this.active = 0;
@@ -115,8 +132,8 @@ if (this.boosting && this.s.length > MIN_LENGTH_FOR_BOOST) {
       const d = sqrt(dx * dx + dy * dy);
       if (d) {
         if (this.active) {
-          this.direction.x = (dx / d);
-          this.direction.y = (dy / d);
+          this.direction.x = dx / d;
+          this.direction.y = dy / d;
         }
         head.x += this.direction.x * this.speed;
         head.y += this.direction.y * this.speed;
@@ -149,9 +166,6 @@ if (this.boosting && this.s.length > MIN_LENGTH_FOR_BOOST) {
       }
     }
 
-    // Boost decay
-
-
     // Food collisions (view-filtered)
     const bounds = getViewBounds(this);
     for (const f of foods) {
@@ -169,18 +183,16 @@ if (this.boosting && this.s.length > MIN_LENGTH_FOR_BOOST) {
       }
     }
 
-    // Snake cnpmollisions
-const nearbySnakes = getSnakesInView(bounds, this);
-
-for (const other of nearbySnakes) {
-  for (const seg of other.s) {
-    if (dist(head.x, head.y, seg.x, seg.y) < 20) {
-      this.scramble();
-      return;
+    // Snake collisions (view-filtered)
+    const nearbySnakes = getSnakesInView(bounds, this);
+    for (const other of nearbySnakes) {
+      for (const seg of other.s) {
+        if (dist(head.x, head.y, seg.x, seg.y) < 20) {
+          this.scramble();
+          return;
+        }
+      }
     }
-  }
-}
-// extra: const nearbySnakes = getSnakesInView(getViewBounds(this), this);
   }
 
   scramble() {
@@ -231,11 +243,9 @@ class Food {
     }
 
     if (this.d) {
-      // Remove this food from the array immediately
       const idx = foods.indexOf(this);
       if (idx !== -1) foods.splice(idx, 1);
     } else {
-      // Recycle: reposition and reset
       this.x = random(gameX);
       this.y = random(gameY);
       this.consumed = false;
@@ -243,20 +253,11 @@ class Food {
   }
 }
 
-// ===== Server state =====
-const PORT = process.env.PORT || 8080;
-const wss = new WebSocketServer({ port: PORT });
-let snakes = [];
-const foods = [];
-const clientMouseMap = new Map();
-let nextSnakeId = 1;
-
-// Prepopulate foods
+// ===== Prepopulate foods and bots =====
 for (let i = 1; i <= REQUIRED_FOODS; i++) {
   foods.push(new Food(random(gameX), random(gameY), 2, 0));
 }
 
-// Spawn initial bots
 for (let i = 0; i < REQUIRED_SNAKES; i++) {
   const bot = new Snake(random(gameX), random(gameY));
   bot.id = nextSnakeId++;
@@ -306,6 +307,7 @@ wss.on("connection", (socket) => {
       const gesture = view.getUint8(offset);
       socket.snake.boosting = gesture === 1;
       socket.snake.speed = gesture === 1 ? 5 : 2;
+
       const buf = new ArrayBuffer(1 + 1 + 1);
       const dv = new DataView(buf);
       dv.setUint8(0, VERSION);
@@ -333,10 +335,10 @@ wss.on("connection", (socket) => {
   socket.on("close", () => {
     console.log("🔴 Client disconnected");
     clientMouseMap.delete(socket);
-      const snake = socket.snake;
-  if (snake) {
-    snake.active = 0; // or false
-  }
+    const snake = socket.snake;
+    if (snake) {
+      snake.active = 0;
+    }
   });
 });
 
@@ -374,6 +376,7 @@ function getFoodsInView(snake) {
 }
 
 function getSnakesInView(bounds, excludeSnake = null) {
+  if (!bounds) return [];
   return snakes.filter(
     (s) =>
       s !== excludeSnake &&
@@ -388,7 +391,6 @@ function getSnakesInView(bounds, excludeSnake = null) {
 }
 
 function broadcastSnapshot() {
-  const SEGMENT_STRIDE = 24;
   const FOOD_STRIDE = 13;
   const playersSnapshot = [...clientMouseMap.values()].map((p) => ({
     x: +p.x,
@@ -402,7 +404,6 @@ function broadcastSnapshot() {
     const mySnakeId = mySnake?.id ?? 0;
     const bounds = mySnake ? getViewBounds(mySnake) : null;
 
-    // Filter snakes
     const visibleSnakes = bounds
       ? snakes.filter((s) =>
           s.s.some(
@@ -415,7 +416,6 @@ function broadcastSnapshot() {
         )
       : snakes;
 
-    // Filter foods
     const visibleFoods = bounds
       ? foods.filter(
           (f) =>
@@ -426,13 +426,12 @@ function broadcastSnapshot() {
         )
       : foods;
 
-    // Build snapshots from filtered arrays
-const snakesSnapshot = visibleSnakes.map((s) => ({
-  id: s.id,
-  x: s.s[0].x,
-  y: s.s[0].y,
-  length: s.s.length,
-}));
+    const snakesSnapshot = visibleSnakes.map((s) => ({
+      id: s.id,
+      x: s.s[0].x,
+      y: s.s[0].y,
+      length: s.s.length,
+    }));
 
     const foodsSnapshot = visibleFoods.map((f) => ({
       x: f.x,
@@ -442,12 +441,12 @@ const snakesSnapshot = visibleSnakes.map((s) => ({
     }));
 
     // === Size calculation ===
-let totalSize = 0;
-totalSize += 1 + 1; // version + type
-totalSize += 4;     // mySnakeId
-totalSize += 4 + playersSnapshot.length * 8; // player positions
-totalSize += 4 + snakesSnapshot.length * 16; // each snake: id (4) + x (4) + y (4) + length (4)
-totalSize += 4 + foodsSnapshot.length * 13;  // each food: x (4) + y (4) + s (4) + d (1)
+    let totalSize = 0;
+    totalSize += 1 + 1; // version + type
+    totalSize += 4; // mySnakeId
+    totalSize += 4 + playersSnapshot.length * 8; // players
+    totalSize += 4 + snakesSnapshot.length * 16; // snakes: id + x + y + length
+    totalSize += 4 + foodsSnapshot.length * 13; // foods: x + y + s + d
 
     // === Allocate and write ===
     const buffer = new ArrayBuffer(totalSize);
@@ -470,14 +469,18 @@ totalSize += 4 + foodsSnapshot.length * 13;  // each food: x (4) + y (4) + s (4)
       offset += 4;
     }
 
-view.setUint32(offset, snakesSnapshot.length);
-offset += 4;
-for (const s of snakesSnapshot) {
-  view.setUint32(offset, s.id);     offset += 4;
-  view.setFloat32(offset, s.x);     offset += 4;
-  view.setFloat32(offset, s.y);     offset += 4;
-  view.setUint32(offset, s.length); offset += 4;
-}
+    view.setUint32(offset, snakesSnapshot.length);
+    offset += 4;
+    for (const s of snakesSnapshot) {
+      view.setUint32(offset, s.id);
+      offset += 4;
+      view.setFloat32(offset, s.x);
+      offset += 4;
+      view.setFloat32(offset, s.y);
+      offset += 4;
+      view.setUint32(offset, s.length);
+      offset += 4;
+    }
 
     view.setUint32(offset, foodsSnapshot.length);
     offset += 4;
@@ -490,9 +493,7 @@ for (const s of snakesSnapshot) {
     }
 
     if (offset !== totalSize) {
-      console.warn(
-        `Packet size mismatch: wrote ${offset} of ${totalSize} bytes`
-      );
+      console.warn(`Packet size mismatch: wrote ${offset} of ${totalSize} bytes`);
     }
 
     client.send(buffer);
@@ -501,18 +502,6 @@ for (const s of snakesSnapshot) {
 
 // Fixed-rate simulation
 setInterval(() => {
-  console.log(foods.length,snakes.length);
-  // if (foods.length > REQUIRED_FOODS + 1) {
-  //   let excess = foods.length - REQUIRED_FOODS;
-
-  //   for (let i = foods.length - 1; i >= 0 && excess > 0; i--) {
-  //     const f = foods[i];
-  //     if (f.d === 0 && (f.consumed || Math.random() < 0.01)) {
-  //       foods.splice(i, 1);
-  //       excess--;
-  //     }
-  //   }
-  // }
-  for (const s of snakes) s.update(); // copy: safe if a snake dies// safe if splice
+  for (const s of snakes) s.update();
   broadcastSnapshot();
 }, TICK_MS);
