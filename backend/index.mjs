@@ -2,7 +2,7 @@
 import express from "express";
 import { createServer } from "http";
 import { WebSocketServer } from "ws";
-import { gameX, gameY } from "setup.mjs"
+import { gameX, gameY } from "../shared/setup.mjs"
 
 // ===== Helpers =====
 const dist = (x1, y1, x2, y2) => Math.hypot(x2 - x1, y2 - y1);
