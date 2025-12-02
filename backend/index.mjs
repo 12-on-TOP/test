@@ -63,7 +63,7 @@ class Snake {
     this.width = 800;
     this.height = 600;
     this.active = 1;
-    this.direction = { x: 0, y: 0 };
+    this.direction = {x:0,y:0};
     this.length = 1;
   }
 
@@ -71,38 +71,36 @@ class Snake {
     if (this.scrambled || this.s.length === 0) return;
     const head = this.s[0];
     this.length = this.s.length;
-
     // Bounds check
     if (head.x <= 0 || head.x >= gameX || head.y <= 0 || head.y >= gameY) {
       this.disappear();
       return;
     }
+    const MIN_LENGTH_FOR_BOOST = 1; // minimum length required to keep boosting
 
-    const MIN_LENGTH_FOR_BOOST = 1;
+if (this.boosting && this.s.length > MIN_LENGTH_FOR_BOOST) {
+  this.def++;
 
-    if (this.boosting && this.s.length > MIN_LENGTH_FOR_BOOST) {
-      this.def++;
+  // Drop tail segment every 5 ticks
+  if (this.def % 5 === 0) {
+    const tail = this.s.pop();
+    if (tail) foods.push(new Food(tail.x, tail.y, 1, 0));
+  }
 
-      // Drop tail segment every 5 ticks
-      if (this.def % 5 === 0) {
-        const tail = this.s.pop();
-        if (tail) foods.push(new Food(tail.x, tail.y, 1, 0));
-      }
+  // Auto-disable boost if snake shrinks too far
+  if (this.s.length < MIN_LENGTH_FOR_BOOST) {
+    this.boosting = false;
+    this.speed = 2;
+    this.def = 0;
+  }
 
-      // Auto-disable boost if snake shrinks too far
-      if (this.s.length <= MIN_LENGTH_FOR_BOOST) {
-        this.boosting = false;
-        this.speed = 2;
-        this.def = 0;
-      }
-    } else {
-      // Reset boost state if not boosting or too short
-      this.boosting = false;
-      this.speed = 2;
-      this.def = 0;
-    }
+} else {
+  // Reset boost state if not boosting or too short
+  this.boosting = false;
+  this.speed = 2;
+  this.def = 0;
+}
 
-    // Movement
     if (this.isBot) {
       const visibleFoods = getFoodsInView(this);
       const target = visibleFoods.length
@@ -115,10 +113,10 @@ class Snake {
       const angle = target
         ? atan2(target.y - head.y, target.x - head.x)
         : Math.random() * Math.PI * 2;
-      if (this.active) {
-        this.direction.x = cos(angle);
-        this.direction.y = sin(angle);
-      }
+        if (this.active) {
+          this.direction.x = cos(angle);
+          this.direction.y = sin(angle);
+        }
       head.x += this.direction.x * this.speed;
       head.y += this.direction.y * this.speed;
       if (this.s.length >= 100) this.active = 0;
@@ -130,8 +128,8 @@ class Snake {
       const d = sqrt(dx * dx + dy * dy);
       if (d) {
         if (this.active) {
-          this.direction.x = dx / d;
-          this.direction.y = dy / d;
+          this.direction.x = (dx / d);
+          this.direction.y = (dy / d);
         }
         head.x += this.direction.x * this.speed;
         head.y += this.direction.y * this.speed;
@@ -164,6 +162,9 @@ class Snake {
       }
     }
 
+    // Boost decay
+
+
     // Food collisions (view-filtered)
     const bounds = getViewBounds(this);
     for (const f of foods) {
@@ -181,16 +182,20 @@ class Snake {
       }
     }
 
-    // Snake collisions (view-filtered)
-    const nearbySnakes = getSnakesInView(bounds, this);
-    for (const other of nearbySnakes) {
-      for (const seg of other.s) {
-        if (dist(head.x, head.y, seg.x, seg.y) < 20) {
-          this.scramble();
-          return;
-        }
-      }
+    // Snake cnpmollisions
+const nearbySnakes = getSnakesInView(bounds, this);
+
+for (const other of nearbySnakes) {
+  for (const seg of other.s) {
+    if (Math.abs(seg.x - head.x) > 50 || Math.abs(seg.y - head.y) > 50) continue;
+    if (dist(head.x, head.y, seg.x, seg.y) < 20) {
+      this.scramble();
+      return;
     }
+  }
+}
+
+// extra: const nearbySnakes = getSnakesInView(getViewBounds(this), this);
   }
 
   scramble() {
@@ -215,7 +220,7 @@ class Snake {
   }
 
   respawn() {
-    if (snakes.length < REQUIRED_SNAKES && this.isBot) {
+    if (this.isBot) {
       const bot = new Snake(random(gameX), random(gameY));
       bot.id = nextSnakeId++;
       bot.isBot = true;
@@ -234,21 +239,32 @@ class Food {
     this.consumed = false;
   }
 
-  grow(snake, amount) {
-    const tail = snake.s[snake.s.length - 1];
-    for (let i = 0; i < amount; i++) {
-      snake.s.push(new SnakeSegment(tail.x, tail.y, 20, tail.c));
-    }
+grow(snake, amount) {
+  const tail = snake.s[snake.s.length - 1];
+  for (let i = 0; i < amount; i++) {
+    snake.s.push(new SnakeSegment(tail.x, tail.y, 20, tail.c));
+  }
 
-    if (this.d) {
-      const idx = foods.indexOf(this);
-      if (idx !== -1) foods.splice(idx, 1);
-    } else {
+  if (this.d) {
+    // Remove this food from the array immediately
+    const idx = foods.indexOf(this);
+    if (idx !== -1) foods.splice(idx, 1);
+  } else {
+    // Only recycle if we haven't hit the cap
+    if (foods.length <= REQUIRED_FOODS) {
       this.x = random(gameX);
       this.y = random(gameY);
       this.consumed = false;
+    } else {
+      while (foods.length < REQUIRED_FOODS) {
+  foods.push(new Food(random(gameX), random(gameY), 0));
+}
+      const idx = foods.indexOf(this);
+      if (idx !== -1) foods.splice(idx, 1);
     }
   }
+}
+
 }
 
 // ===== Prepopulate foods and bots =====
@@ -341,7 +357,7 @@ wss.on("connection", (socket) => {
 });
 
 // ===== Simulation tick + broadcast =====
-const TICK_MS = 1000 / 60;
+const TICK_MS = 1000 / 30;
 
 function getViewBounds(snake) {
   if (!snake || snake.s.length === 0) return null;
