@@ -4,6 +4,77 @@ import { createServer } from "http";
 import { WebSocketServer } from "ws";
 import { gameX, gameY } from "../shared/setup.mjs"
 
+// ===== Adaptive spatial index =====
+const spatial = {
+  MIN_CELL: 32,
+  MAX_CELL: 512,
+  cellSize: 256,
+  snakesGrid: new Map(),
+  foodsGrid: new Map(),
+
+  computeCellSize(totalSnakes, totalFoods) {
+    const worldW = gameX;
+    const worldH = gameY;
+    const A = worldW * worldH;
+    const load = totalSnakes * 1.0 + totalFoods * 0.25;
+    const base = Math.sqrt(A / Math.max(load, 1));
+    const size = Math.max(this.MIN_CELL, Math.min(this.MAX_CELL, base));
+    this.cellSize = Math.round((this.cellSize * 0.5) + (size * 0.5));
+  },
+
+  cellOf(x, y) {
+    const cx = Math.floor(x / this.cellSize);
+    const cy = Math.floor(y / this.cellSize);
+    return { cx, cy };
+  },
+
+  insert(grid, x, y, entity) {
+    const { cx, cy } = this.cellOf(x, y);
+    const key = `${cx},${cy}`;
+    if (!grid.has(key)) grid.set(key, []);
+    grid.get(key).push(entity);
+  },
+
+  rebuild(snakes, foods) {
+    this.computeCellSize(snakes.length, foods.length);
+    this.snakesGrid.clear();
+    this.foodsGrid.clear();
+    for (const s of snakes) {
+      if (!s.s.length) continue;
+      const h = s.s[0];
+      this.insert(this.snakesGrid, h.x, h.y, s);
+    }
+    for (const f of foods) {
+      if (f.consumed) continue;
+      this.insert(this.foodsGrid, f.x, f.y, f);
+    }
+  },
+
+  queryGrid(grid, bounds) {
+    if (!bounds) return [];
+    const minCell = this.cellOf(bounds.minX, bounds.minY);
+    const maxCell = this.cellOf(bounds.maxX, bounds.maxY);
+    const results = [];
+    for (let cy = minCell.cy; cy <= maxCell.cy; cy++) {
+      for (let cx = minCell.cx; cx <= maxCell.cx; cx++) {
+        const key = `${cx},${cy}`;
+        const bucket = grid.get(key);
+        if (!bucket) continue;
+        for (const e of bucket) {
+          const ex = e.x ?? e.s?.[0]?.x ?? 0;
+          const ey = e.y ?? e.s?.[0]?.y ?? 0;
+          if (ex >= bounds.minX && ex <= bounds.maxX &&
+              ey >= bounds.minY && ey <= bounds.maxY) {
+            results.push(e);
+          }
+        }
+      }
+    }
+    return results;
+  }
+};
+
+
 // ===== Helpers =====
 const dist = (x1, y1, x2, y2) => Math.hypot(x2 - x1, y2 - y1);
 const random = (x = 1) => Math.random() * x;
@@ -386,22 +457,12 @@ function getEntitiesInView(bounds, entities) {
 
 function getFoodsInView(snake) {
   const bounds = getViewBounds(snake);
-  return getEntitiesInView(bounds, foods).filter((f) => !f.consumed);
+  return spatial.queryGrid(spatial.foodsGrid, bounds).filter(f => !f.consumed);
 }
 
 function getSnakesInView(bounds, excludeSnake = null) {
-  if (!bounds) return [];
-  return snakes.filter(
-    (s) =>
-      s !== excludeSnake &&
-      s.s.some(
-        (seg) =>
-          seg.x >= bounds.minX &&
-          seg.x <= bounds.maxX &&
-          seg.y >= bounds.minY &&
-          seg.y <= bounds.maxY
-      )
-  );
+  const coarse = spatial.queryGrid(spatial.snakesGrid, bounds);
+  return coarse.filter(s => s !== excludeSnake);
 }
 
 function broadcastSnapshot() {
@@ -517,5 +578,6 @@ function broadcastSnapshot() {
 // Fixed-rate simulation
 setInterval(() => {
   for (const s of snakes) s.update();
+  spatial.rebuild(snakes, foods);   // <<< rebuild grid each tick
   broadcastSnapshot();
 }, TICK_MS);
