@@ -67,7 +67,7 @@ new p5((p) =>
   p.setup = () => {
   p.frameRate(60);
   p.createCanvas(p.windowWidth, p.windowHeight);
-  socket = new WebSocket('ws://192.168.1.29:8080/');
+  socket = new WebSocket('wss://192.168.1.29:8080/');
   socket.binaryType = 'arraybuffer';
   socket.onopen = () => {
     console.log('🟢 Connected to server');
