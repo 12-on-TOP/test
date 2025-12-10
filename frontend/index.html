@@ -67,7 +67,7 @@ new p5((p) =>
   p.setup = () => {
   p.frameRate(60);
   p.createCanvas(p.windowWidth, p.windowHeight);
-  socket = new WebSocket('wss://test-ixft.onrender.com');
+  socket = new WebSocket("wss://gorsy-blanca-cistaceous.ngrok-free.dev/");
   socket.binaryType = 'arraybuffer';
   socket.onopen = () => {
     console.log('🟢 Connected to server');
