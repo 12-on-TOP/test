@@ -134,7 +134,7 @@ class Snake {
     this.width = 800;
     this.height = 600;
     this.active = 1;
-    this.direction = {x:0,y:0};
+    this.direction = { x: 0, y: 0 };
     this.length = 1;
   }
 
@@ -142,52 +142,45 @@ class Snake {
     if (this.scrambled || this.s.length === 0) return;
     const head = this.s[0];
     this.length = this.s.length;
+
     // Bounds check
     if (head.x <= 0 || head.x >= gameX || head.y <= 0 || head.y >= gameY) {
       this.disappear();
       return;
     }
-    const MIN_LENGTH_FOR_BOOST = 1; // minimum length required to keep boosting
+    const MIN_LENGTH_FOR_BOOST = 1;
 
-if (this.boosting && this.s.length > MIN_LENGTH_FOR_BOOST) {
-  this.def++;
-
-  // Drop tail segment every 5 ticks
-  if (this.def % 5 === 0) {
-    const tail = this.s.pop();
-    if (tail) foods.push(new Food(tail.x, tail.y, 1, 0));
-  }
-
-  // Auto-disable boost if snake shrinks too far
-  if (this.s.length < MIN_LENGTH_FOR_BOOST) {
-    this.boosting = false;
-    this.speed = 2;
-    this.def = 0;
-  }
-
-} else {
-  // Reset boost state if not boosting or too short
-  this.boosting = false;
-  this.speed = 2;
-  this.def = 0;
-}
+    if (this.boosting && this.s.length > MIN_LENGTH_FOR_BOOST) {
+      this.def++;
+      if (this.def % 5 === 0) {
+        const tail = this.s.pop();
+        if (tail) foods.push(new Food(tail.x, tail.y, 1, 0));
+      }
+      if (this.s.length < MIN_LENGTH_FOR_BOOST) {
+        this.boosting = false;
+        this.speed = 2;
+        this.def = 0;
+      }
+    } else {
+      this.boosting = false;
+      this.speed = 2;
+      this.def = 0;
+    }
 
     if (this.isBot) {
       const visibleFoods = getFoodsInView(this);
       const target = visibleFoods.length
         ? visibleFoods.reduce((a, b) =>
-            dist(head.x, head.y, a.x, a.y) < dist(head.x, head.y, b.x, b.y)
-              ? a
-              : b
+            dist(head.x, head.y, a.x, a.y) < dist(head.x, head.y, b.x, b.y) ? a : b
           )
         : null;
       const angle = target
         ? atan2(target.y - head.y, target.x - head.x)
         : Math.random() * Math.PI * 2;
-        if (this.active) {
-          this.direction.x = cos(angle);
-          this.direction.y = sin(angle);
-        }
+      if (this.active) {
+        this.direction.x = cos(angle);
+        this.direction.y = sin(angle);
+      }
       head.x += this.direction.x * this.speed;
       head.y += this.direction.y * this.speed;
       if (this.s.length >= 100) this.active = 0;
@@ -199,74 +192,72 @@ if (this.boosting && this.s.length > MIN_LENGTH_FOR_BOOST) {
       const d = sqrt(dx * dx + dy * dy);
       if (d) {
         if (this.active) {
-          this.direction.x = (dx / d);
-          this.direction.y = (dy / d);
+          this.direction.x = dx / d;
+          this.direction.y = dy / d;
         }
         head.x += this.direction.x * this.speed;
         head.y += this.direction.y * this.speed;
       }
     }
+  this.trail.unshift({ x: head.x, y: head.y });
 
-    // Trail
-    this.trail.unshift({ x: head.x, y: head.y });
-    if (this.trail.length > this.s.length * 5) this.trail.pop();
+  // Limit trail history
+  if (this.trail.length > this.s.length * 6)
+    this.trail.pop();
 
-    // Segment spacing
-    const gap = 8;
-    for (let i = 1; i < this.s.length; i++) {
-      let distSoFar = 0;
-      for (let t = 1; t < this.trail.length; t++) {
-        const step = dist(
-          this.trail[t - 1].x,
-          this.trail[t - 1].y,
-          this.trail[t].x,
-          this.trail[t].y
-        );
-        distSoFar += step;
-        if (distSoFar >= gap * i) {
-          const overshoot = distSoFar - gap * i;
-          const ratio = 1 - overshoot / step;
-          this.s[i].x = lerp(this.trail[t - 1].x, this.trail[t].x, ratio);
-          this.s[i].y = lerp(this.trail[t - 1].y, this.trail[t].y, ratio);
-          break;
-        }
-      }
+  const targetSpacing = 10;       // behaves like baseSpacing
+  const maxSpacing = 14;          // behaves like maxSpacing
+  const stiffness = 0.35;         // same as first class
+
+  for (let i = 1; i < this.s.length; i++) {
+    const curr = this.s[i];
+    const prev = this.s[i - 1];
+
+    let dx = curr.x - prev.x;
+    let dy = curr.y - prev.y;
+    let d = sqrt(dx * dx + dy * dy);
+
+    if (d === 0) continue;
+
+    // distance error
+    let error = d - targetSpacing;
+
+    // Soft correction
+    let nx = dx / d;
+    let ny = dy / d;
+    curr.x -= nx * error * stiffness;
+    curr.y -= ny * error * stiffness;
+
+    // Slack limiter (accordion prevention)
+    if (d > maxSpacing) {
+      let extra = (d - maxSpacing) * 0.5;
+      curr.x -= nx * extra;
+      curr.y -= ny * extra;
     }
-
-    // Boost decay
-
+  }
 
     // Food collisions (view-filtered)
     const bounds = getViewBounds(this);
-    for (const f of foods) {
+    const nearbyFoods = spatial.queryGrid(spatial.foodsGrid, bounds);
+    for (const f of nearbyFoods) {
       if (f.consumed) continue;
-      if (
-        f.x < bounds.minX ||
-        f.x > bounds.maxX ||
-        f.y < bounds.minY ||
-        f.y > bounds.maxY
-      )
-        continue;
       if (dist(head.x, head.y, f.x, f.y) < 20) {
         f.consumed = true;
         f.grow(this, f.d ? 1 : f.s);
       }
     }
 
-    // Snake cnpmollisions
-const nearbySnakes = getSnakesInView(bounds, this);
-
-for (const other of nearbySnakes) {
-  for (const seg of other.s) {
-    if (Math.abs(seg.x - head.x) > 50 || Math.abs(seg.y - head.y) > 50) continue;
-    if (dist(head.x, head.y, seg.x, seg.y) < 20) {
-      this.scramble();
-      return;
+    // Snake collisions (view-filtered)
+    const nearbySnakes = getSnakesInView(bounds, this);
+    for (const other of nearbySnakes) {
+      for (const seg of other.s) {
+        if (Math.abs(seg.x - head.x) > 50 || Math.abs(seg.y - head.y) > 50) continue;
+        if (dist(head.x, head.y, seg.x, seg.y) < 20) {
+          this.scramble();
+          return;
+        }
+      }
     }
-  }
-}
-
-// extra: const nearbySnakes = getSnakesInView(getViewBounds(this), this);
   }
 
   scramble() {
@@ -467,10 +458,7 @@ function getSnakesInView(bounds, excludeSnake = null) {
 
 function broadcastSnapshot() {
   const FOOD_STRIDE = 13;
-  const playersSnapshot = [...clientMouseMap.values()].map((p) => ({
-    x: +p.x,
-    y: +p.y,
-  }));
+  const playersSnapshot = [...clientMouseMap.values()].map((p) => ({ x: +p.x, y: +p.y }));
 
   for (const client of wss.clients) {
     if (client.readyState !== 1) continue;
@@ -479,34 +467,85 @@ function broadcastSnapshot() {
     const mySnakeId = mySnake?.id ?? 0;
     const bounds = mySnake ? getViewBounds(mySnake) : null;
 
-    const visibleSnakes = bounds
-      ? snakes.filter((s) =>
-          s.s.some(
-            (seg) =>
-              seg.x >= bounds.minX &&
-              seg.x <= bounds.maxX &&
-              seg.y >= bounds.minY &&
-              seg.y <= bounds.maxY
-          )
-        )
-      : snakes;
+    // Filter via spatial index
+    const visibleSnakes = bounds ? getSnakesInView(bounds, null) : snakes;
+    const visibleFoods = bounds ? spatial.queryGrid(spatial.foodsGrid, bounds) : foods;
 
-    const visibleFoods = bounds
-      ? foods.filter(
-          (f) =>
-            f.x >= bounds.minX &&
-            f.x <= bounds.maxX &&
-            f.y >= bounds.minY &&
-            f.y <= bounds.maxY
-        )
-      : foods;
+    // Build full snake snapshots (id + angle + all segment positions)
+    const snakesSnapshot = [];
+    for (const s of visibleSnakes) {
+      if (!s.s.length) continue;
+      const segments = s.s.map(seg => ({ x: seg.x, y: seg.y }));
+      const angle = Math.atan2(s.direction.y, s.direction.x);
+      snakesSnapshot.push({
+        id: s.id,
+        angle,
+        segments
+      });
+    }
 
-    const snakesSnapshot = visibleSnakes.map((s) => ({
-      id: s.id,
-      x: s.s[0].x,
-      y: s.s[0].y,
-      length: s.s.length,
+    const foodsSnapshot = visibleFoods.map((f) => ({
+      x: f.x,
+      y: f.y,
+      s: f.s,
+      d: f.d ? 1 : 0,
     }));
+
+    // === Size calculation (big-endian) ===
+    // Header: version(1) + type(1) + mySnakeId(4)
+    let totalSize = 1 + 1 + 4;
+    // Players: count(4) + each (x,y) float32 -> 8 bytes
+    totalSize += 4 + playersSnapshot.length * 8;
+    // Snakes: count(4) + each snake: id(4) + segCount(4) + angle(4) + each segment (x,y float32 -> 8 bytes)
+    totalSize += 4;
+    for (const s of snakesSnapshot) {
+      totalSize += 4; // id
+      totalSize += 4; // segCount
+      totalSize += 4; // angle
+      totalSize += s.segments.length * 8;
+    }
+    // Foods: count(4) + each stride 13
+    totalSize += 4 + foodsSnapshot.length * FOOD_STRIDE;
+
+    const buffer = new ArrayBuffer(totalSize);
+    const view = new DataView(buffer);
+    let offset = 0;
+
+    // Header
+    view.setUint8(offset, VERSION); offset += 1;
+    view.setUint8(offset, TYPE_SNAPSHOT); offset += 1;
+    view.setUint32(offset, mySnakeId, false); offset += 4;
+
+    // Players
+    view.setUint32(offset, playersSnapshot.length, false); offset += 4;
+    for (const { x, y } of playersSnapshot) {
+    function broadcastSnapshot() {
+  const FOOD_STRIDE = 13;
+  const playersSnapshot = [...clientMouseMap.values()].map((p) => ({ x: +p.x, y: +p.y }));
+
+  for (const client of wss.clients) {
+    if (client.readyState !== 1) continue;
+
+    const mySnake = client.snake;
+    const mySnakeId = mySnake?.id ?? 0;
+    const bounds = mySnake ? getViewBounds(mySnake) : null;
+
+    // Filter visible entities
+    const visibleSnakes = bounds ? getSnakesInView(bounds, null) : snakes;
+    const visibleFoods = bounds ? spatial.queryGrid(spatial.foodsGrid, bounds) : foods;
+
+    // Build full snake snapshots (id + angle + all segment positions)
+    const snakesSnapshot = [];
+    for (const s of visibleSnakes) {
+      if (!s.s.length) continue;
+      const segments = s.s.map(seg => ({ x: seg.x, y: seg.y }));
+      const angle = Math.atan2(s.direction.y, s.direction.x);
+      snakesSnapshot.push({
+        id: s.id,
+        angle,
+        segments
+      });
+    }
 
     const foodsSnapshot = visibleFoods.map((f) => ({
       x: f.x,
@@ -516,53 +555,52 @@ function broadcastSnapshot() {
     }));
 
     // === Size calculation ===
-    let totalSize = 0;
-    totalSize += 1 + 1; // version + type
-    totalSize += 4; // mySnakeId
-    totalSize += 4 + playersSnapshot.length * 8; // players
-    totalSize += 4 + snakesSnapshot.length * 16; // snakes: id + x + y + length
-    totalSize += 4 + foodsSnapshot.length * 13; // foods: x + y + s + d
+    let totalSize = 1 + 1 + 4; // version + type + mySnakeId
+    totalSize += 4 + playersSnapshot.length * 8;
+    totalSize += 4; // snake count
+    for (const s of snakesSnapshot) {
+      totalSize += 4; // id
+      totalSize += 4; // segCount
+      totalSize += 4; // angle
+      totalSize += s.segments.length * 8;
+    }
+    totalSize += 4 + foodsSnapshot.length * FOOD_STRIDE;
 
     // === Allocate and write ===
     const buffer = new ArrayBuffer(totalSize);
     const view = new DataView(buffer);
     let offset = 0;
 
-    view.setUint8(offset, VERSION);
-    offset += 1;
-    view.setUint8(offset, TYPE_SNAPSHOT);
-    offset += 1;
-    view.setUint32(offset, mySnakeId);
-    offset += 4;
+    // Header
+    view.setUint8(offset, VERSION); offset += 1;
+    view.setUint8(offset, TYPE_SNAPSHOT); offset += 1;
+    view.setUint32(offset, mySnakeId, false); offset += 4;
 
-    view.setUint32(offset, playersSnapshot.length);
-    offset += 4;
+    // Players
+    view.setUint32(offset, playersSnapshot.length, false); offset += 4;
     for (const { x, y } of playersSnapshot) {
-      view.setFloat32(offset, x);
-      offset += 4;
-      view.setFloat32(offset, y);
-      offset += 4;
+      view.setFloat32(offset, x, false); offset += 4;
+      view.setFloat32(offset, y, false); offset += 4;
     }
 
-    view.setUint32(offset, snakesSnapshot.length);
-    offset += 4;
+    // Snakes
+    view.setUint32(offset, snakesSnapshot.length, false); offset += 4;
     for (const s of snakesSnapshot) {
-      view.setUint32(offset, s.id);
-      offset += 4;
-      view.setFloat32(offset, s.x);
-      offset += 4;
-      view.setFloat32(offset, s.y);
-      offset += 4;
-      view.setUint32(offset, s.length);
-      offset += 4;
+      view.setUint32(offset, s.id, false); offset += 4;
+      view.setUint32(offset, s.segments.length, false); offset += 4;
+      view.setFloat32(offset, s.angle, false); offset += 4;
+      for (const seg of s.segments) {
+        view.setFloat32(offset, seg.x, false); offset += 4;
+        view.setFloat32(offset, seg.y, false); offset += 4;
+      }
     }
 
-    view.setUint32(offset, foodsSnapshot.length);
-    offset += 4;
+    // Foods
+    view.setUint32(offset, foodsSnapshot.length, false); offset += 4;
     for (const f of foodsSnapshot) {
-      view.setFloat32(offset, f.x);
-      view.setFloat32(offset + 4, f.y);
-      view.setFloat32(offset + 8, f.s);
+      view.setFloat32(offset, f.x, false);
+      view.setFloat32(offset + 4, f.y, false);
+      view.setFloat32(offset + 8, f.s, false);
       view.setUint8(offset + 12, f.d);
       offset += FOOD_STRIDE;
     }
