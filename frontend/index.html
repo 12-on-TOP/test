@@ -12,224 +12,194 @@
     <main>
     </main>
   <script type="module">
-import { gameX, gameY } from "../shared/setup.mjs"
-console.log(gameX,gameY)
+import { gameX, gameY } from './setup.mjs';
+
 let socket;
 let players = [];
-let snakes = []; // [{ id, segments: [{ x, y, s, c: [r,g,b] }] }]
+let snakes = []; // [{ id, angle, segments: [{ x, y }] }]
 let foods = [];
 let mySnakeId = 0;
-const WORLD_PADDING = 100;
-const WORLD_MIN_X = -WORLD_PADDING;
-const WORLD_MIN_Y = -WORLD_PADDING;
-const WORLD_MAX_X = window.innerWidth + WORLD_PADDING;
-const WORLD_MAX_Y = window.innerHeight + WORLD_PADDING;
 
 const VERSION = 1;
 const TYPE_SNAPSHOT   = 1;
 const TYPE_GESTURE    = 2;
 const TYPE_WINDOWSIZE = 3;
 const TYPE_MOUSE      = 4;
-const trailMap = new Map(); // snakeId → [{x, y}]
 
 let frameCounter = 0;
 let lastHeadPos = { x: 0, y: 0 };
 
-function dist(a, b) {
-  return Math.hypot(b.x - a.x, b.y - a.y);
-}
-function lerp(a, b, t) {
-  return a + (b - a) * t;
-}
-function getSegmentsFromTrail(trail, length, gap = 8) {
-  const segments = [];
-  for (let i = 0; i < length; i++) {
-    let distSoFar = 0;
-    for (let t = 1; t < trail.length; t++) {
-      const step = dist(trail[t - 1], trail[t]);
-      distSoFar += step;
-      if (distSoFar >= gap * i) {
-        const overshoot = distSoFar - gap * i;
-        const ratio = 1 - overshoot / step;
-        const x = lerp(trail[t - 1].x, trail[t].x, ratio);
-        const y = lerp(trail[t - 1].y, trail[t].y, ratio);
-        segments.push({ x, y });
-        break;
+new p5((p) => {
+  p.setup = () => {
+    p.frameRate(60);
+    p.createCanvas(p.windowWidth, p.windowHeight);
+
+    socket = new WebSocket("wss://gorsy-blanca-cistaceous.ngrok-free.dev/");
+    socket.binaryType = 'arraybuffer';
+
+    socket.onopen = () => {
+      console.log('🟢 Connected to server');
+      sendWindowSize();
+    };
+
+    socket.onmessage = (event) => {
+      const view = new DataView(event.data);
+      let offset = 0;
+      if (view.byteLength < 2) return;
+
+      const version = view.getUint8(offset); offset += 1;
+      if (version !== VERSION) return;
+
+      const type = view.getUint8(offset); offset += 1;
+      if (type !== TYPE_SNAPSHOT) return;
+
+      // mySnakeId
+      mySnakeId = view.getUint32(offset, false); offset += 4;
+
+      // Players
+      const playerCount = view.getUint32(offset, false); offset += 4;
+      players = [];
+      for (let i = 0; i < playerCount; i++) {
+        const x = view.getFloat32(offset, false); offset += 4;
+        const y = view.getFloat32(offset, false); offset += 4;
+        players.push({ x, y });
+      }
+
+      // Snakes
+      const snakeCount = view.getUint32(offset, false); offset += 4;
+      snakes = [];
+      for (let i = 0; i < snakeCount; i++) {
+        const id = view.getUint32(offset, false); offset += 4;
+        const segCount = view.getUint32(offset, false); offset += 4;
+        const angle = view.getFloat32(offset, false); offset += 4;
+
+        const segments = [];
+        for (let s = 0; s < segCount; s++) {
+          const x = view.getFloat32(offset, false); offset += 4;
+          const y = view.getFloat32(offset, false); offset += 4;
+          segments.push({ x, y });
+        }
+
+        snakes.push({ id, angle, segments });
+      }
+
+      // Foods
+      const foodCount = view.getUint32(offset, false); offset += 4;
+      foods = [];
+      for (let i = 0; i < foodCount; i++) {
+        const x = view.getFloat32(offset, false); offset += 4;
+        const y = view.getFloat32(offset, false); offset += 4;
+        const s = view.getFloat32(offset, false); offset += 4;
+        const d = view.getUint8(offset); offset += 1;
+        foods.push({ x, y, s, d });
+      }
+    };
+
+    socket.onclose = () => console.log('🔴 Disconnected from server');
+    socket.onerror = (err) => console.error('WebSocket error', err);
+  };
+
+  p.draw = () => {
+    p.background(240);
+
+    // Camera: center on my head if available, otherwise last known
+    const me = snakes.find(s => s.id === mySnakeId);
+    const myHead = me && me.segments.length ? me.segments[0] : null;
+
+    p.push();
+    if (myHead) {
+      lastHeadPos = { x: myHead.x, y: myHead.y };
+      p.translate(p.width / 2 - myHead.x, p.height / 2 - myHead.y);
+    } else {
+      p.translate(p.width / 2 - lastHeadPos.x, p.height / 2 - lastHeadPos.y);
+    }
+
+    // World bounds
+    p.stroke(0);
+    p.line(0, 0, gameX, 0);
+    p.line(gameX, 0, gameX, gameY);
+    p.line(gameX, gameY, 0, gameY);
+    p.line(0, gameY, 0, 0);
+
+    // Foods
+    for (let f of foods) {
+      p.fill(f.d ? 'blue' : 'green');
+      const diam = 10 + f.s;
+      p.ellipse(f.x, f.y, diam, diam);
+    }
+
+    // Snakes
+    for (let s of snakes) {
+      for (let i = s.segments.length - 1; i >= 0; i--) {
+        const seg = s.segments[i];
+        p.fill(255, 255, 0);
+        p.circle(seg.x, seg.y, 20);
+      }
+      // draw head orientation marker
+      if (s.segments.length > 0) {
+        const head = s.segments[0];
+        p.push();
+        p.translate(head.x, head.y);
+        p.rotate(s.angle);
+        p.fill(255, 0, 0);
+        p.circle(5,5,5);
+        p.circle(5,-5,5);
+        p.pop();
       }
     }
-  }
-  return segments;
-}
 
+    p.pop();
 
-new p5((p) =>
-{
-  p.setup = () => {
-  p.frameRate(60);
-  p.createCanvas(p.windowWidth, p.windowHeight);
-  socket = new WebSocket("wss://gorsy-blanca-cistaceous.ngrok-free.dev/");
-  socket.binaryType = 'arraybuffer';
-  socket.onopen = () => {
-    console.log('🟢 Connected to server');
-    sendWindowSize();
-  };
-
-  socket.onmessage = event => {
-    const view = new DataView(event.data);
-    let offset = 0;
-    if (view.byteLength < 2) return;
-
-    const version = view.getUint8(offset); offset += 1;
-    if (version !== VERSION) return;
-
-    const type = view.getUint8(offset); offset += 1;
-
-    if (type !== TYPE_SNAPSHOT) return; // ignore unknown types
-
-    // Snapshot parse
-    if (offset + 4 > view.byteLength) return;
-    mySnakeId = view.getUint32(offset); offset += 4;
-
-    if (offset + 4 > view.byteLength) return;
-    const playerCount = view.getUint32(offset); offset += 4;
-
-    players = [];
-    for (let i = 0; i < playerCount; i++) {
-      if (offset + 8 > view.byteLength) return;
-      players.push({
-        x: view.getFloat32(offset),
-        y: view.getFloat32(offset + 4)
-      });
-      offset += 8;
+    // HUD
+    p.fill(0);
+    p.textSize(16);
+    if (mySnakeId && me) {
+      p.text(`Length: ${me.segments.length}`, 20, 24);
     }
 
-    if (offset + 4 > view.byteLength) return;
-    const snakeCount = view.getUint32(offset); offset += 4;
-
-snakes = [];
-for (let i = 0; i < snakeCount; i++) {
-  const id = view.getUint32(offset); offset += 4;
-  const x = view.getFloat32(offset); offset += 4;
-  const y = view.getFloat32(offset); offset += 4;
-  const length = view.getUint32(offset); offset += 4;
-
-  const trail = trailMap.get(id) || [];
-  trail.unshift({ x, y });
-  const maxTrailLength = length * 5;
-  if (trail.length > maxTrailLength) trail.length = maxTrailLength;
-  trailMap.set(id, trail);
-
-  snakes.push({ id, x, y, length });
-}
-
-    if (offset + 4 > view.byteLength) return;
-    const foodCount = view.getUint32(offset); offset += 4;
-
-    foods = [];
-    for (let i = 0; i < foodCount; i++) {
-      if (offset + 13 > view.byteLength) return;
-      foods.push({
-        x: view.getFloat32(offset),
-        y: view.getFloat32(offset + 4),
-        s: view.getFloat32(offset + 8),
-        d: view.getUint8(offset + 12)
-      });
-      offset += 13;
+    // Send mouse (throttled)
+    if (socket.readyState === WebSocket.OPEN && (++frameCounter % 3) === 0) {
+      const buffer = new ArrayBuffer(1 + 1 + 8);
+      const view = new DataView(buffer);
+      let o = 0;
+      view.setUint8(o, VERSION); o += 1;
+      view.setUint8(o, TYPE_MOUSE); o += 1;
+      view.setFloat32(o, p.mouseX, false); o += 4;
+      view.setFloat32(o, p.mouseY, false); o += 4;
+      socket.send(buffer);
     }
   };
 
-  socket.onclose = () => console.log('🔴 Disconnected from server');
-  socket.onerror = err => console.error('WebSocket error', err);
-}
-
-p.draw = () => {
-  p.background(240);
-
-  const me = snakes.find(s => s.id === mySnakeId);
-  const myHead = me || null;
-  p.push();
-if (myHead) {
-  lastHeadPos = { x: myHead.x, y: myHead.y };
-  p.translate(p.width / 2 - myHead.x, p.height / 2 - myHead.y);
-} else {
-  p.translate(p.width / 2 - lastHeadPos.x, p.height / 2 - lastHeadPos.y);
-}
-    p.line(0, 0, gameX, 0);
-  p.line(gameX, 0, gameX, gameY);
-  p.line(gameX, gameY, 0, gameY);
-  p.line(0, gameY, 0, 0);
-
-
-  for (let f of foods) {
-    p.fill(f.d ? 'blue' : 'green');
-    p.ellipse(f.x, f.y, 10 + f.s, 10 + f.s);
-  }
-
-  // Snakes
-for (let s of snakes) {
-  const trail = trailMap.get(s.id) || [];
-  const segments = getSegmentsFromTrail(trail, s.length);
-  for (let seg of segments.slice().reverse()) {
-    p.fill(255, 255, 0); // default color
-    p.circle(seg.x, seg.y, 20);
-  }
-}
-
-  p.pop();
-
-  // HUD
-  p.fill(0);
-  p.textSize(16);
-  if (mySnakeId) {
-  const me = snakes.find(s => s.id === mySnakeId);
-if (me && me.length > 0) {
-  p.text(`Length: ${me.length}`, 20, 24);
-}
-}
-  // Send mouse (throttled)
-  if (socket.readyState === WebSocket.OPEN && (++frameCounter % 3) === 0) {
-    const buffer = new ArrayBuffer(1 + 1 + 8);
+  function sendGesture(flag) {
+    if (socket.readyState !== WebSocket.OPEN) return;
+    const buffer = new ArrayBuffer(1 + 1 + 1);
     const view = new DataView(buffer);
-    let o = 0;
-    view.setUint8(o, VERSION); o += 1;
-    view.setUint8(o, TYPE_MOUSE); o += 1;
-    view.setFloat32(o, p.mouseX); o += 4;
-    view.setFloat32(o, p.mouseY); o += 4;
+    view.setUint8(0, VERSION);
+    view.setUint8(1, TYPE_GESTURE);
+    view.setUint8(2, flag);
     socket.send(buffer);
   }
-}
 
+  function sendWindowSize() {
+    if (socket.readyState !== WebSocket.OPEN) return;
+    const buffer = new ArrayBuffer(1 + 1 + 8);
+    const view = new DataView(buffer);
+    view.setUint8(0, VERSION);
+    view.setUint8(1, TYPE_WINDOWSIZE);
+    view.setFloat32(2, p.width, false);
+    view.setFloat32(6, p.height, false);
+    socket.send(buffer);
+  }
 
-function sendGesture(flag) {
-  if (socket.readyState !== WebSocket.OPEN) return;
-  const buffer = new ArrayBuffer(1 + 1 + 1);
-  const view = new DataView(buffer);
-  view.setUint8(0, VERSION);
-  view.setUint8(1, TYPE_GESTURE);
-  view.setUint8(2, flag);
-  socket.send(buffer);
-}
-
-function sendWindowSize() {
-  if (socket.readyState !== WebSocket.OPEN) return;
-  const buffer = new ArrayBuffer(1 + 1 + 8);
-  const view = new DataView(buffer);
-  view.setUint8(0, VERSION);
-  view.setUint8(1, TYPE_WINDOWSIZE);
-  view.setFloat32(2, p.width);
-  view.setFloat32(6, p.height);
-  socket.send(buffer);
-}
-
-p.keyPressed = () => {
-  if (p.key === "ArrowUp" || p.key === " " || p.key === "w") sendGesture(1);
-}
-p.keyReleased = () => {
-  if (p.key === "ArrowUp" || p.key === " " || p.key === "w") sendGesture(0);
-}
-p.mousePressed = () => { sendGesture(1); }
-p.mouseReleased = () => { sendGesture(0); }
-p.windowResized = () => { p.resizeCanvas(p.windowWidth, p.windowHeight); sendWindowSize(); }
+  p.keyPressed = () => {
+    if (p.key === "ArrowUp" || p.key === " " || p.key === "w") sendGesture(1);
+  };
+  p.keyReleased = () => {
+    if (p.key === "ArrowUp" || p.key === " " || p.key === "w") sendGesture(0);
+  };
+  p.mousePressed = () => { sendGesture(1); };
+  p.mouseReleased = () => { sendGesture(0); };
+  p.windowResized = () => { p.resizeCanvas(p.windowWidth, p.windowHeight); sendWindowSize(); };
 });
 
   </script>
