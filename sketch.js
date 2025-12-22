@@ -20,7 +20,7 @@ function setup() {
   frameRate(60);
   createCanvas(windowWidth, windowHeight);
 
-  socket = new WebSocket("wss://gorsy-blanca-cistaceous.ngrok-free.dev/");
+  socket = new WebSocket("wss://advancement-extraction-feelings-tooth.trycloudflare.com");
   socket.binaryType = "arraybuffer";
 
   socket.onopen = () => {
