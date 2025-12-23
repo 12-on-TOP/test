@@ -16,11 +16,24 @@ let gameY = 0;
 let frameCounter = 0;
 let lastHeadPos = { x: 0, y: 0 };
 
-function setup() {
+
+// 🔥 NEW: Fetch dynamic tunnel URL from GitHub
+async function getServerUrl() {
+  const res = await fetch("https://raw.githubusercontent.com/12-on-TOP/test/main/current_tunnel.txt");
+  const url = (await res.text()).trim();
+  return `wss://${url.replace("https://", "")}`;
+}
+
+
+async function setup() {
   frameRate(60);
   createCanvas(windowWidth, windowHeight);
 
-  socket = new WebSocket("wss://advancement-extraction-feelings-tooth.trycloudflare.com");
+  // 🔥 NEW: Load dynamic WebSocket URL
+  const serverUrl = await getServerUrl();
+  console.log("Connecting to:", serverUrl);
+
+  socket = new WebSocket(serverUrl);
   socket.binaryType = "arraybuffer";
 
   socket.onopen = () => {
@@ -33,19 +46,17 @@ function setup() {
   socket.onerror = (err) => console.error("WebSocket error", err);
 }
 
+
 function handleMessage(event) {
   const view = new DataView(event.data);
   let offset = 0;
   if (view.byteLength < 1) return;
 
-  // VERSION
   const version = view.getUint8(offset++);
   if (version !== TYPE_VERSION) return;
 
-  // TYPE
   const type = view.getUint8(offset++);
 
-  // WORLD SIZE PACKET
   if (type === TYPE_WORLDSIZE) {
     gameX = view.getFloat32(offset, false); offset += 4;
     gameY = view.getFloat32(offset, false); offset += 4;
@@ -53,12 +64,10 @@ function handleMessage(event) {
     return;
   }
 
-  // SNAPSHOT PACKET
   if (type !== TYPE_SNAPSHOT) return;
 
   mySnakeId = view.getUint32(offset, false); offset += 4;
 
-  // Snakes
   const snakeCount = view.getUint32(offset, false); offset += 4;
   snakes = [];
 
@@ -77,7 +86,6 @@ function handleMessage(event) {
     snakes.push({ id, angle, segments });
   }
 
-  // Foods
   const foodCount = view.getUint32(offset, false); offset += 4;
   foods = [];
 
@@ -90,6 +98,7 @@ function handleMessage(event) {
     foods.push({ x, y, s, d });
   }
 }
+
 
 function draw() {
   background(240);
@@ -105,19 +114,16 @@ function draw() {
     translate(width / 2 - lastHeadPos.x, height / 2 - lastHeadPos.y);
   }
 
-  // World bounds
   stroke(0);
   noFill();
   rect(0, 0, gameX, gameY);
 
-  // Foods
   for (let f of foods) {
     fill(f.d ? "blue" : "green");
     const diam = 10 + f.s * 0.5;
     ellipse(f.x, f.y, diam, diam);
   }
 
-  // Snakes
   for (let s of snakes) {
     for (let i = s.segments.length - 1; i >= 0; i--) {
       const seg = s.segments[i];
@@ -139,14 +145,12 @@ function draw() {
 
   pop();
 
-  // HUD
   fill(0);
   textSize(16);
   if (mySnakeId && me) {
     text(`Length: ${me.segments.length}`, 20, 24);
   }
 
-  // Send mouse (throttled)
   if (socket.readyState === WebSocket.OPEN && (++frameCounter % 3) === 0) {
     const buffer = new ArrayBuffer(1 + 1 + 8);
     const view = new DataView(buffer);
@@ -159,6 +163,7 @@ function draw() {
   }
 }
 
+
 function sendGesture(flag) {
   if (socket.readyState !== WebSocket.OPEN) return;
   const buffer = new ArrayBuffer(1 + 1 + 1);
@@ -169,6 +174,7 @@ function sendGesture(flag) {
   view.setUint8(o++, flag);
   socket.send(buffer);
 }
+
 
 function sendWindowSize() {
   if (socket.readyState !== WebSocket.OPEN) return;
@@ -181,6 +187,7 @@ function sendWindowSize() {
   view.setFloat32(o, height, false); o += 4;
   socket.send(buffer);
 }
+
 
 function keyPressed() {
   if (key === "ArrowUp" || key === " " || key === "w") sendGesture(1);
