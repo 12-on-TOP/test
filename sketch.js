@@ -22,17 +22,18 @@ let lastLeaderboard = [];
 // Map of DOM elements for nicknames
 let nicknameElements = {};
 
-function setup() {
-  createCanvas(windowWidth, windowHeight, WEBGL);
-  frameRate(60);
-
-  socket = new WebSocket("wss://thread-allowed-thought-mostly.trycloudflare.com");
-  socket.binaryType = "arraybuffer";
-
-  socket.onopen = () => {
-    console.log("ðŸŸ¢ Connected to server");
-    sendWindowSize();
-  };
+async function connectSocket() {
+const repoOwner = "12-on-TOP";
+ const repoName = "test";
+  const filePath = "current_tunnel.txt";
+   const apiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${filePath}`;
+    const response = await fetch(apiUrl);
+     const data = await response.json();
+       const decoded = atob(data.content).trim();
+        const wsUrl = decoded.replace("http", "ws");
+         socket = new WebSocket(wsUrl);
+          socket.binaryType = "arraybuffer";
+           socket.onopen = () => { console.log("ðŸŸ¢ Connected to server", wsUrl); sendWindowSize(); };
 
 socket.onmessage = (event) => {
   const view = new DataView(event.data);
@@ -153,6 +154,13 @@ if (type === TYPE_LEADERBOARD) {
 
   socket.onclose = () => console.log("ðŸ”´ Disconnected from server");
   socket.onerror = (err) => console.error("WebSocket error", err);
+}
+
+function setup() {
+  createCanvas(windowWidth, windowHeight, WEBGL);
+  frameRate(60);
+
+  connectSocket()
 }
 
 function play () {
