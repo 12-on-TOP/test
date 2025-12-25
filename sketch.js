@@ -11,6 +11,7 @@ const TYPE_MOUSE = 4;
 const TYPE_WORLDSIZE = 5;
 const TYPE_NICKNAME = 6;
 const TYPE_LEADERBOARD = 7;
+const TYPE_SKIN = 8;
 
 let gameX = 0;
 let gameY = 0;
@@ -18,9 +19,44 @@ let frameCounter = 0;
 let lastHeadPos = { x: 0, y: 0 };
 let state = 0;
 let lastLeaderboard = [];
-
-// Map of DOM elements for nicknames
+let customPattern = null;
+let customCode = null;
+let showingCustom = false; // track current view
 let nicknameElements = {};
+const LS_INDEX = "snake_skin_index";
+const LS_CUSTOM = "snake_custom_pattern";
+const LS_SHOWING = "snake_showing_custom";
+
+function saveSkinState() {
+  localStorage.setItem(LS_INDEX, index);
+
+  if (customPattern) {
+    localStorage.setItem(LS_CUSTOM, JSON.stringify(customPattern));
+  } else {
+    localStorage.removeItem(LS_CUSTOM);
+  }
+
+  localStorage.setItem(LS_SHOWING, showingCustom ? "1" : "0");
+}
+function loadSkinState() {
+  const savedIndex = localStorage.getItem(LS_INDEX);
+  if (savedIndex !== null) {
+    index = Number(savedIndex);
+  }
+
+  const savedCustom = localStorage.getItem(LS_CUSTOM);
+  if (savedCustom) {
+    try {
+      customPattern = JSON.parse(savedCustom);
+    } catch {
+      customPattern = null;
+    }
+  }
+
+  showingCustom = localStorage.getItem(LS_SHOWING) === "1";
+}
+
+
 
 async function connectSocket() {
   try {
@@ -108,7 +144,10 @@ async function connectSocket() {
         for (let s = 0; s < segCount; s++) {
           const x = view.getFloat32(offset, false); offset += 4;
           const y = view.getFloat32(offset, false); offset += 4;
-          segments.push({ x, y });
+          const r = view.getUint8(offset++); // Assuming RGB is sent as 3 bytes per segment
+const g = view.getUint8(offset++);
+const b = view.getUint8(offset++);
+          segments.push({ x, y, c: [r, g, b] });
         }
 
         const nickLen = view.getUint16(offset, false); offset += 2;
@@ -170,31 +209,210 @@ async function connectSocket() {
 function setup() {
   createCanvas(windowWidth, windowHeight, WEBGL);
   frameRate(60);
-
-  connectSocket()
+  loadSkinState();
+  connectSocket();
+  setTimeout(changeSkin, 0);
 }
 
 function play () {
   sendNickname(document.getElementById("myDiv").innerText);
 }
 
+let index = 0;
+let colours = ["red","orange","yellow","green","blue","purple","magenta","gray","white","black"];
+let colourKey = ["q","w","e","r","t","y","u","i","o","p"]
+
 function changeSkin() {
-  let container = document.getElementById("change");
+  const container = document.getElementById("change");
+
+  // Determine boxes: custom or default
+  const boxes = showingCustom && customPattern ? customPattern : Array.from({ length: 30 }, () => colours[index]);
+
   container.innerHTML = `
-    <div style="display:flex; flex-wrap:nowrap;">
-      ${Array.from({length:30}, () => 
-        '<div style="width:50px; height:50px; margin:2px; background-color:black;"></div>'
-      ).join('')}
+    <div style="display:flex; flex-wrap:nowrap;" id="exe">
+      ${boxes.map(c =>
+        `<div style="width:50px;height:50px;margin:2px;background:${c};border:2px solid black"></div>`
+      ).join("")}
+    </div>
+
+    <br><br>
+    <div id="null">
+      <button onclick="ce()">=></button><br>
+      <button onclick="cd()"><=</button>
     </div>
     <br><br>
+    <button onclick="build()" type="button" id="flex">Build your snake</button>
   `;
-  container.addEventListener("scroll",() => {
-    console.log("Div is scrolling!");
+
+  // Ensure DOM always reflects customPattern
+  applyCustomPatternSafe();
+}
+
+function ce() {
+  if (showingCustom && customPattern) {
+    shiftCustomPattern(1);
+  } else {
+    index = (index + 1) % colours.length;
+    showingCustom = false;
+  }
+  changeSkin();
+  saveSkinState();
+}
+
+function cd() {
+  if (showingCustom && customPattern) {
+    shiftCustomPattern(-1);
+  } else {
+    index = (index - 1 + colours.length) % colours.length;
+    showingCustom = false;
+  }
+  changeSkin();
+  saveSkinState();
+}
+
+function shiftCustomPattern(dir) {
+  if (!customPattern || customPattern.length === 0) return;
+
+  // Get first box colour index
+  const firstIdx = colours.indexOf(customPattern[0]);
+  if (firstIdx === -1) return;
+
+  // New colour index
+  const newColour = colours[(firstIdx + dir + colours.length) % colours.length];
+
+  // Apply new colour to all boxes
+  customPattern = customPattern.map(() => newColour);
+
+  applyCustomPatternSafe();
+}
+
+function applyCustomPatternSafe() {
+  const exe = document.querySelector("#exe");
+  if (!exe) return;
+  const exeBoxes = exe.querySelectorAll("div");
+  if (!customPattern) return;
+  customPattern.forEach((c, i) => {
+    if (exeBoxes[i]) exeBoxes[i].style.backgroundColor = c;
   });
 }
 
 
-// Call once to render
+
+function ensureArrowsVisible() {
+  let controls = document.getElementById("null");
+  if (!controls) {
+    controls = document.createElement("div");
+    controls.id = "null";
+    document.getElementById("change").appendChild(controls);
+  }
+
+  controls.innerHTML = `
+    <button onclick="ce()" type="button">=></button><br>
+    <button onclick="cd()" type="button"><=</button><br>
+    <button onclick="savey(event)" type="button">Save</button>
+  `;
+}
+
+
+
+function build() {
+  const b = document.getElementById("build");
+  document.getElementById("flex").innerHTML = "Rebuild your snake";
+b.innerHTML = `
+  <div style="display:flex; flex-wrap:nowrap;">
+    ${Array.from({length:9}, (_, i) =>
+      `<button 
+         style="width:50px; height:50px; margin:2px; background-color:${colours[i]}; border:2px solid black"
+         onclick="handleClick(${i})">
+       </button>`
+    ).join('')}
+    <button onclick="savef(event)" type="button">Save</button>
+  </div>
+`;
+
+  document.getElementById("null").innerHTML = ``;
+
+  // Reset all boxes inside #exe to black
+  const exeBoxes = document.querySelectorAll("#exe div");
+  exeBoxes.forEach(box => {
+    box.style.backgroundColor = "black";
+  });
+}
+
+function handleClick(i) {
+  const exeBoxes = document.querySelectorAll("#exe div");
+  // Find the first black box
+  const target = Array.from(exeBoxes).find(box => box.style.backgroundColor === "black");
+  if (target) {
+    target.style.backgroundColor = colours[i];
+    console.log("Applied", colours[i], "to snake box");
+  } else {
+    console.log("No black boxes left to paint");
+  }
+}
+
+function getColoursFromDOM() {
+  const boxes = document.querySelectorAll("#exe div");
+  return Array.from(boxes).map(box => box.style.backgroundColor);
+}
+
+
+// For changeSkin (initial palette)
+function savey(event) {
+  event.preventDefault();
+  const coloursArray = getColoursFromDOM();
+  console.log("Extracted colours:", coloursArray);
+
+  let skinCode = "";
+  for (let c of coloursArray) {
+    const idx = colours.indexOf(c);
+    skinCode += idx !== -1 ? colourKey[idx] : "?";
+  }
+  console.log("skinCode =", skinCode);
+
+  // Persist separately if you want
+  saveSkinState();
+
+}
+
+
+
+
+function savef(event) {
+  event.preventDefault();
+
+  const exeBoxes = document.querySelectorAll("#exe div");
+  const coloursArray = Array.from(exeBoxes).map(b => b.style.backgroundColor);
+
+  // Build repeating pattern from leading painted segment
+  let paintedCount = 0;
+  for (let i = 0; i < coloursArray.length; i++) {
+    if (coloursArray[i] !== "black") paintedCount++; else break;
+  }
+  if (paintedCount > 0) {
+    const pattern = coloursArray.slice(0, paintedCount);
+    for (let i = paintedCount; i < coloursArray.length; i++) {
+      coloursArray[i] = pattern[i % paintedCount];
+      exeBoxes[i].style.backgroundColor = coloursArray[i];
+    }
+  }
+
+  // Save custom pattern + code
+  customPattern = coloursArray.slice();
+  customCode = coloursArray.map(c => {
+    const idx = colours.indexOf(c);
+    return idx !== -1 ? colourKey[idx] : "?";
+  }).join("");
+  console.log("Custom skin colours code =", customCode);
+
+  // Show custom immediately and ensure arrows are visible
+  ensureArrowsVisible();
+  showingCustom = true;
+saveSkinState();
+changeSkin();
+
+}
+
 
 
 
@@ -206,6 +424,8 @@ function draw() {
       <button onclick="changeSkin()" type="button">Change Skin</button>`;
   } else {
     document.getElementById("nick").innerHTML = ``;
+    document.getElementById("change").innerHTML = ``;
+    document.getElementById("build").innerHTML = ``;
 
     background(20);
     ambientLight(80);
@@ -237,17 +457,19 @@ function draw() {
         push();
         translate(seg.x, seg.y, 0);
         noStroke();
-        ambientMaterial(255, 255, 0);
+        // Use received RGB (seg.c is [r,g,b])
+        ambientMaterial(seg.c[0], seg.c[1], seg.c[2]);
         sphere(10);
         pop();
       }
 
+      // For the head (first segment), override with red if it's the head
       if (s.segments.length > 0) {
         const head = s.segments[0];
         push();
         translate(head.x, head.y, 0);
         rotateZ(s.angle);
-        ambientMaterial(255, 0, 0);
+        ambientMaterial(255, 0, 0); // Keep head red
         sphere(6);
         translate(5, 5, 2);
         sphere(2);
@@ -421,4 +643,34 @@ function mouseReleased() { sendGesture(0); }
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
   sendWindowSize();
+}
+
+function sendSkin(pattern) {
+  if (!socket || socket.readyState !== WebSocket.OPEN) return;
+
+  // Convert color names to RGB (assuming colours array is ["red", "orange", ...])
+  const rgbPattern = pattern.map(c => {
+    const idx = colours.indexOf(c);
+    if (idx === -1) return [0,0,0]; // Default to black if invalid
+    // Map to RGB (extend this if needed for more colors)
+    const rgbMap = {
+      red: [255,0,0], orange: [255,165,0], yellow: [255,255,0], green: [0,255,0],
+      blue: [0,0,255], purple: [128,0,128], magenta: [255,0,255], gray: [128,128,128],
+      white: [255,255,255], black: [0,0,0]
+    };
+    return rgbMap[c] || [0,0,0];
+  });
+
+  // Flatten to array of numbers for binary send
+  const flatRgb = rgbPattern.flat();
+  const buffer = new ArrayBuffer(1 + 1 + 4 + flatRgb.length * 4); // version + type + length + RGBs
+  const view = new DataView(buffer);
+  let offset = 0;
+  view.setUint8(offset++, TYPE_VERSION);
+  view.setUint8(offset++, TYPE_SKIN);
+  view.setUint32(offset, rgbPattern.length, false); offset += 4; // Number of colors in pattern
+  for (const rgb of flatRgb) {
+    view.setFloat32(offset, rgb, false); offset += 4;
+  }
+  socket.send(buffer);
 }
