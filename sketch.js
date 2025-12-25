@@ -214,9 +214,21 @@ function setup() {
   setTimeout(changeSkin, 0);
 }
 
-function play () {
-  sendNickname(document.getElementById("myDiv").innerText);
+function play() {
+  const nickname = document.getElementById("myDiv").innerText;
+  sendNickname(nickname);
+
+  // Use the chosen colour from your palette
+  const chosenColour = showingCustom && customPattern
+    ? customPattern
+    : Array.from({ length: 30 }, () => colours[index]);
+
+  // Convert CSS colour names to RGB
+  const pattern = chosenColour.map(cssToRGB);
+
+  sendSkin(pattern);
 }
+
 
 let index = 0;
 let colours = ["red","orange","yellow","green","blue","purple","magenta","gray","white","black"];
@@ -677,3 +689,8 @@ function sendSkin(pattern) {
   socket.send(buf);
 }
 
+function cssToRGB(colorName) {
+  const ctx = document.createElement("canvas").getContext("2d");
+  ctx.fillStyle = colorName;
+  return ctx.fillStyle.match(/\d+/g).map(Number); // e.g. "blue" â†’ [0,0,255]
+}
