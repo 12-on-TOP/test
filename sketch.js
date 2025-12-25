@@ -381,13 +381,15 @@ function savey(event) {
 function savef(event) {
   event.preventDefault();
 
+  // 1. Extract colours from DOM
   const exeBoxes = document.querySelectorAll("#exe div");
-  const coloursArray = Array.from(exeBoxes).map(b => b.style.backgroundColor);
+  let coloursArray = Array.from(exeBoxes).map(b => b.style.backgroundColor);
 
-  // Build repeating pattern from leading painted segment
+  // 2. Build repeating pattern from leading painted segment
   let paintedCount = 0;
   for (let i = 0; i < coloursArray.length; i++) {
-    if (coloursArray[i] !== "black") paintedCount++; else break;
+    if (coloursArray[i] !== "black") paintedCount++;
+    else break;
   }
   if (paintedCount > 0) {
     const pattern = coloursArray.slice(0, paintedCount);
@@ -397,7 +399,7 @@ function savef(event) {
     }
   }
 
-  // Save custom pattern + code
+  // 3. Save custom pattern + code
   customPattern = coloursArray.slice();
   customCode = coloursArray.map(c => {
     const idx = colours.indexOf(c);
@@ -405,13 +407,24 @@ function savef(event) {
   }).join("");
   console.log("Custom skin colours code =", customCode);
 
-  // Show custom immediately and ensure arrows are visible
+  // 4. Convert CSS colours to RGB arrays
+  const rgbPattern = customPattern.map(c => {
+    const ctx = document.createElement("canvas").getContext("2d");
+    ctx.fillStyle = c;
+    const rgb = ctx.fillStyle.match(/\d+/g).map(Number);
+    return rgb; // [r,g,b]
+  });
+
+  // 5. Send skin to server
+  sendSkin(rgbPattern);
+
+  // 6. Update UI
   ensureArrowsVisible();
   showingCustom = true;
-saveSkinState();
-changeSkin();
-
+  saveSkinState();
+  changeSkin();
 }
+
 
 
 
@@ -646,31 +659,21 @@ function windowResized() {
 }
 
 function sendSkin(pattern) {
-  if (!socket || socket.readyState !== WebSocket.OPEN) return;
-
-  // Convert color names to RGB (assuming colours array is ["red", "orange", ...])
-  const rgbPattern = pattern.map(c => {
-    const idx = colours.indexOf(c);
-    if (idx === -1) return [0,0,0]; // Default to black if invalid
-    // Map to RGB (extend this if needed for more colors)
-    const rgbMap = {
-      red: [255,0,0], orange: [255,165,0], yellow: [255,255,0], green: [0,255,0],
-      blue: [0,0,255], purple: [128,0,128], magenta: [255,0,255], gray: [128,128,128],
-      white: [255,255,255], black: [0,0,0]
-    };
-    return rgbMap[c] || [0,0,0];
-  });
-
-  // Flatten to array of numbers for binary send
-  const flatRgb = rgbPattern.flat();
-  const buffer = new ArrayBuffer(1 + 1 + 4 + flatRgb.length * 4); // version + type + length + RGBs
-  const view = new DataView(buffer);
+  // pattern is an array of [r,g,b] values
+  const buf = new ArrayBuffer(1 + 1 + 4 + pattern.length * 12);
+  const dv = new DataView(buf);
   let offset = 0;
-  view.setUint8(offset++, TYPE_VERSION);
-  view.setUint8(offset++, TYPE_SKIN);
-  view.setUint32(offset, rgbPattern.length, false); offset += 4; // Number of colors in pattern
-  for (const rgb of flatRgb) {
-    view.setFloat32(offset, rgb, false); offset += 4;
+
+  dv.setUint8(offset++, VERSION);
+  dv.setUint8(offset++, TYPE_SKIN);
+  dv.setUint32(offset, pattern.length, false); offset += 4;
+
+  for (const [r,g,b] of pattern) {
+    dv.setFloat32(offset, r, false); offset += 4;
+    dv.setFloat32(offset, g, false); offset += 4;
+    dv.setFloat32(offset, b, false); offset += 4;
   }
-  socket.send(buffer);
+
+  socket.send(buf);
 }
+
