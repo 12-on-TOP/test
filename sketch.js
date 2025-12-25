@@ -167,11 +167,32 @@ function play () {
   sendNickname(document.getElementById("myDiv").innerText);
 }
 
+function changeSkin() {
+  let container = document.getElementById("change");
+  container.innerHTML = `
+    <div style="display:flex; flex-wrap:nowrap;">
+      ${Array.from({length:30}, () => 
+        '<div style="width:50px; height:50px; margin:2px; background-color:black;"></div>'
+      ).join('')}
+    </div>
+    <br><br>
+  `;
+  container.addEventListener("scroll",() => {
+    console.log("Div is scrolling!");
+  });
+}
+
+
+// Call once to render
+
+
+
 function draw() {
   if (state === 0) {
     noLoop();
     document.getElementById("nick").innerHTML =
-      `Enter Nickname:<div id="myDiv" contenteditable="true" style="border:1px solid #ccc; padding:5px; font:16px Arial; white-space:nowrap; overflow:hidden; width:200px"></div> <button onclick="play()">PLAY</button>`;
+      `Enter Nickname:<div id="myDiv" contenteditable="true" style="border:1px solid #ccc; padding:5px; font:16px Arial; white-space:nowrap; overflow:hidden; width:200px"></div> <button onclick="play()">PLAY</button><br><br>
+      <button onclick="changeSkin()" type="button">Change Skin</button>`;
   } else {
     document.getElementById("nick").innerHTML = ``;
 
