@@ -142,11 +142,11 @@ async function connectSocket() {
 
         const segments = [];
         for (let s = 0; s < segCount; s++) {
-          const x = view.getFloat32(offset, false); offset += 4;
-          const y = view.getFloat32(offset, false); offset += 4;
-          const r = view.getUint8(offset++); // Assuming RGB is sent as 3 bytes per segment
-const g = view.getUint8(offset++);
-const b = view.getUint8(offset++);
+          const x = view.getFloat32(offset); offset += 4;
+          const y = view.getFloat32(offset); offset += 4;
+          const r = view.getUint8(offset++);
+          const g = view.getUint8(offset++);
+          const b = view.getUint8(offset++);
           segments.push({ x, y, c: [r, g, b] });
         }
 
