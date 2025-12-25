@@ -79,6 +79,8 @@ async function connectSocket() {
       sendWindowSize();
     };
 
+
+
     socket.onmessage = (event) => {
       const view = new DataView(event.data);
       let offset = 0;
@@ -237,8 +239,14 @@ let colourKey = ["q","w","e","r","t","y","u","i","o","p"]
 function changeSkin() {
   const container = document.getElementById("change");
 
-  // Determine boxes: custom or default
-  const boxes = showingCustom && customPattern ? customPattern : Array.from({ length: 30 }, () => colours[index]);
+  // Determine boxes: use customPattern if showingCustom, else default colour
+  let boxes;
+  if (showingCustom && customPattern && customPattern.length) {
+    boxes = customPattern.slice(); // restore saved pattern
+  } else {
+    boxes = Array.from({ length: 30 }, () => colours[index]);
+    showingCustom = false;
+  }
 
   container.innerHTML = `
     <div style="display:flex; flex-wrap:nowrap;" id="exe">
@@ -256,7 +264,7 @@ function changeSkin() {
     <button onclick="build()" type="button" id="flex">Build your snake</button>
   `;
 
-  // Ensure DOM always reflects customPattern
+  // Ensure DOM reflects current pattern
   applyCustomPatternSafe();
 }
 
@@ -671,26 +679,37 @@ function windowResized() {
 }
 
 function sendSkin(pattern) {
-  // pattern is an array of [r,g,b] values
   const buf = new ArrayBuffer(1 + 1 + 4 + pattern.length * 12);
   const dv = new DataView(buf);
   let offset = 0;
-
-  dv.setUint8(offset++, VERSION);
+  dv.setUint8(offset++, TYPE_VERSION); // âš¡ Was VERSION
   dv.setUint8(offset++, TYPE_SKIN);
   dv.setUint32(offset, pattern.length, false); offset += 4;
-
   for (const [r,g,b] of pattern) {
     dv.setFloat32(offset, r, false); offset += 4;
     dv.setFloat32(offset, g, false); offset += 4;
     dv.setFloat32(offset, b, false); offset += 4;
   }
-
   socket.send(buf);
 }
+
 
 function cssToRGB(colorName) {
   const ctx = document.createElement("canvas").getContext("2d");
   ctx.fillStyle = colorName;
-  return ctx.fillStyle.match(/\d+/g).map(Number); // e.g. "blue" â†’ [0,0,255]
+  const computed = ctx.fillStyle;
+  if (computed.startsWith("#")) {
+    // Convert hex to [r,g,b]
+    const hex = computed.slice(1);
+    const bigint = parseInt(hex, 16);
+    const r = (bigint >> 16) & 255;
+    const g = (bigint >> 8) & 255;
+    const b = bigint & 255;
+    return [r,g,b];
+  } else if (computed.startsWith("rgb")) {
+    return computed.match(/\d+/g).map(Number);
+  } else {
+    return [255,255,0]; // fallback
+  }
 }
+
