@@ -23,138 +23,149 @@ let lastLeaderboard = [];
 let nicknameElements = {};
 
 async function connectSocket() {
-const repoOwner = "12-on-TOP";
- const repoName = "test";
-  const filePath = "current_tunnel.txt";
-   const apiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${filePath}`;
-    const response = await fetch(apiUrl);
-     const data = await response.json();
-       const decoded = atob(data.content).trim();
-        const wsUrl = decoded.replace("http", "ws");
-         socket = new WebSocket(wsUrl);
-          socket.binaryType = "arraybuffer";
-           socket.onopen = () => { console.log("ðŸŸ¢ Connected to server", wsUrl); sendWindowSize(); };
-
-socket.onmessage = (event) => {
-  const view = new DataView(event.data);
-  let offset = 0;
-  if (view.byteLength < 1) return;
-
-  const version = view.getUint8(offset++);
-  if (version !== TYPE_VERSION) return;
-
-  const type = view.getUint8(offset++);
-
-  if (type === TYPE_WORLDSIZE) {
-    gameX = view.getFloat32(offset, false); offset += 4;
-    gameY = view.getFloat32(offset, false); offset += 4;
-    console.log("ðŸŒ World size received:", gameX, gameY);
-    return;
-  }
-
-if (type === TYPE_LEADERBOARD) {
-  const count = view.getUint32(offset, false); offset += 4;
-  const leaderboard = [];
-
-  for (let i = 0; i < count; i++) {
-    const length = view.getUint32(offset, false); offset += 4;
-    const isBot = view.getUint8(offset++);
-    const nickLen = view.getUint16(offset, false); offset += 2;
-
-    let nickname = "";
-    if (nickLen > 0) {
-      const nickBytes = new Uint8Array(event.data, offset, nickLen);
-      nickname = new TextDecoder().decode(nickBytes);
-      offset += nickLen;
+  try {
+    // Fetch the tunnel URL from GitHub Pages
+    const response = await fetch("https://12-on-top.github.io/test/current_tunnel.txt");
+    if (!response.ok) {
+      throw new Error(`Failed to fetch tunnel: ${response.status}`);
     }
 
-    leaderboard.push({ nickname, isBot: !!isBot, length });
-  }
+    // Read plain text file
+    const url = (await response.text()).trim();
+    const wsUrl = url.replace("http", "ws");
 
-  // âœ… Only update if game has started
-  if (state === 1) {
-    if (leaderboard.length > 0) {
-      lastLeaderboard = leaderboard;
-    }
-    if (lastLeaderboard.length > 0) {
-      renderLeaderboard(lastLeaderboard);
-    }
-  }
-}
+    // Connect to WebSocket server
+    socket = new WebSocket(wsUrl);
+    socket.binaryType = "arraybuffer";
 
+    socket.onopen = () => {
+      console.log("ðŸŸ¢ Connected to server", wsUrl);
+      sendWindowSize();
+    };
 
+    socket.onmessage = (event) => {
+      const view = new DataView(event.data);
+      let offset = 0;
+      if (view.byteLength < 1) return;
 
+      const version = view.getUint8(offset++);
+      if (version !== TYPE_VERSION) return;
 
-  if (type !== TYPE_SNAPSHOT) return;
+      const type = view.getUint8(offset++);
 
-  mySnakeId = view.getUint32(offset, false); offset += 4;
-
-  const snakeCount = view.getUint32(offset, false); offset += 4;
-  snakes = [];
-  for (let i = 0; i < snakeCount; i++) {
-    const id = view.getUint32(offset, false); offset += 4;
-    const segCount = view.getUint32(offset, false); offset += 4;
-    const angle = view.getFloat32(offset, false); offset += 4;
-
-    const segments = [];
-    for (let s = 0; s < segCount; s++) {
-      const x = view.getFloat32(offset, false); offset += 4;
-      const y = view.getFloat32(offset, false); offset += 4;
-      segments.push({ x, y });
-    }
-
-    // nickname: [length:2][bytes:N]
-    const nickLen = view.getUint16(offset, false); offset += 2;
-    let nickname = "";
-    if (nickLen > 0) {
-      const nickBytes = new Uint8Array(event.data, offset, nickLen);
-      nickname = new TextDecoder().decode(nickBytes);
-      offset += nickLen;
-    }
-
-    snakes.push({ id, angle, segments, nickname });
-
-    // Create or update DOM element
-    if (nickname) {
-      if (!nicknameElements[id]) {
-        const p = createP(nickname);
-        p.style("position", "absolute");
-        p.style("color", "white");
-        p.style("font", "16px Arial");
-        p.style("margin", "0");
-        p.style("padding", "0");
-        p.style("pointer-events", "none");
-        nicknameElements[id] = p;
-      } else {
-        nicknameElements[id].html(nickname);
+      // World size packet
+      if (type === TYPE_WORLDSIZE) {
+        gameX = view.getFloat32(offset, false); offset += 4;
+        gameY = view.getFloat32(offset, false); offset += 4;
+        console.log("ðŸŒ World size received:", gameX, gameY);
+        return;
       }
-    }
+
+      // Leaderboard packet
+      if (type === TYPE_LEADERBOARD) {
+        const count = view.getUint32(offset, false); offset += 4;
+        const leaderboard = [];
+
+        for (let i = 0; i < count; i++) {
+          const length = view.getUint32(offset, false); offset += 4;
+          const isBot = view.getUint8(offset++);
+          const nickLen = view.getUint16(offset, false); offset += 2;
+
+          let nickname = "";
+          if (nickLen > 0) {
+            const nickBytes = new Uint8Array(event.data, offset, nickLen);
+            nickname = new TextDecoder().decode(nickBytes);
+            offset += nickLen;
+          }
+
+          leaderboard.push({ nickname, isBot: !!isBot, length });
+        }
+
+        if (state === 1) {
+          if (leaderboard.length > 0) {
+            lastLeaderboard = leaderboard;
+          }
+          if (lastLeaderboard.length > 0) {
+            renderLeaderboard(lastLeaderboard);
+          }
+        }
+        return;
+      }
+
+      // Snapshot packet
+      if (type !== TYPE_SNAPSHOT) return;
+
+      mySnakeId = view.getUint32(offset, false); offset += 4;
+
+      const snakeCount = view.getUint32(offset, false); offset += 4;
+      snakes = [];
+      for (let i = 0; i < snakeCount; i++) {
+        const id = view.getUint32(offset, false); offset += 4;
+        const segCount = view.getUint32(offset, false); offset += 4;
+        const angle = view.getFloat32(offset, false); offset += 4;
+
+        const segments = [];
+        for (let s = 0; s < segCount; s++) {
+          const x = view.getFloat32(offset, false); offset += 4;
+          const y = view.getFloat32(offset, false); offset += 4;
+          segments.push({ x, y });
+        }
+
+        const nickLen = view.getUint16(offset, false); offset += 2;
+        let nickname = "";
+        if (nickLen > 0) {
+          const nickBytes = new Uint8Array(event.data, offset, nickLen);
+          nickname = new TextDecoder().decode(nickBytes);
+          offset += nickLen;
+        }
+
+        snakes.push({ id, angle, segments, nickname });
+
+        if (nickname) {
+          if (!nicknameElements[id]) {
+            const p = createP(nickname);
+            p.style("position", "absolute");
+            p.style("color", "white");
+            p.style("font", "16px Arial");
+            p.style("margin", "0");
+            p.style("padding", "0");
+            p.style("pointer-events", "none");
+            nicknameElements[id] = p;
+          } else {
+            nicknameElements[id].html(nickname);
+          }
+        }
+      }
+
+      // Cleanup ghost nicknames
+      const activeIds = new Set(snakes.map(s => s.id));
+      for (const id in nicknameElements) {
+        if (id !== "hud" && !activeIds.has(Number(id))) {
+          nicknameElements[id].remove();
+          delete nicknameElements[id];
+        }
+      }
+
+      // Foods
+      const foodCount = view.getUint32(offset, false); offset += 4;
+      foods = [];
+      for (let i = 0; i < foodCount; i++) {
+        const x = view.getFloat32(offset, false); offset += 4;
+        const y = view.getFloat32(offset, false); offset += 4;
+        const s = view.getFloat32(offset, false); offset += 4;
+        const d = view.getUint8(offset); offset += 1;
+        foods.push({ x, y, s, d });
+      }
+    };
+
+    socket.onclose = () => console.log("ðŸ”´ Disconnected from server");
+    socket.onerror = (err) => console.error("WebSocket error", err);
+
+  } catch (err) {
+    console.error("âŒ Error connecting:", err);
   }
-
-  // âœ… Cleanup block: remove ghost nicknames
-  const activeIds = new Set(snakes.map(s => s.id));
-  for (const id in nicknameElements) {
-    if (id !== "hud" && !activeIds.has(Number(id))) {
-      nicknameElements[id].remove();   // remove DOM element
-      delete nicknameElements[id];     // remove from map
-    }
-  }
-
-  const foodCount = view.getUint32(offset, false); offset += 4;
-  foods = [];
-  for (let i = 0; i < foodCount; i++) {
-    const x = view.getFloat32(offset, false); offset += 4;
-    const y = view.getFloat32(offset, false); offset += 4;
-    const s = view.getFloat32(offset, false); offset += 4;
-    const d = view.getUint8(offset); offset += 1;
-    foods.push({ x, y, s, d });
-  }
-};
-
-
-  socket.onclose = () => console.log("ðŸ”´ Disconnected from server");
-  socket.onerror = (err) => console.error("WebSocket error", err);
 }
+
 
 function setup() {
   createCanvas(windowWidth, windowHeight, WEBGL);
