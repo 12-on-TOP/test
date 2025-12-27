@@ -83,7 +83,7 @@ async function connectSocket() {
 
     // Connect to WebSocket server
     socket = new WebSocket(wsUrl);
-    socket = new WebSocket("ws://localhost:8080"); // --- IGNORE ---
+    socket = new WebSocket("ws://localhost:8081"); // --- IGNORE ---
     socket.binaryType = "arraybuffer";
 
     socket.onopen = () => {
