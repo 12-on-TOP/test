@@ -56,6 +56,17 @@ function loadSkinState() {
   showingCustom = localStorage.getItem(LS_SHOWING) === "1";
 }
 
+let last = performance.now();
+function debugFrame() {
+    const now = performance.now();
+    const dt = now - last;
+    last = now;
+
+    if (dt > 20) console.log("LAG SPIKE:", dt.toFixed(2), "ms");
+    requestAnimationFrame(debugFrame);
+}
+
+
 
 
 async function connectSocket() {
@@ -72,6 +83,7 @@ async function connectSocket() {
 
     // Connect to WebSocket server
     socket = new WebSocket(wsUrl);
+    socket = new WebSocket("ws://localhost:8080"); // --- IGNORE ---
     socket.binaryType = "arraybuffer";
 
     socket.onopen = () => {
@@ -450,6 +462,7 @@ function savef(event) {
 
 
 function draw() {
+  debugFrame();
   if (state === 0) {
     noLoop();
     document.getElementById("nick").innerHTML =
