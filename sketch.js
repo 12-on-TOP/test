@@ -83,7 +83,7 @@ async function connectSocket() {
 
     // Connect to WebSocket server
     socket = new WebSocket(wsUrl);
-    //socket = new WebSocket("ws://localhost:8080"); // --- IGNORE ---
+    socket = new WebSocket("ws://localhost:8080"); // --- IGNORE ---
     socket.binaryType = "arraybuffer";
 
     socket.onopen = () => {
@@ -151,19 +151,43 @@ async function connectSocket() {
       snakes = [];
       for (let i = 0; i < snakeCount; i++) {
         const id = view.getUint32(offset, false); offset += 4;
-        const segCount = view.getUint32(offset, false); offset += 4;
+        const headX = view.getFloat32(offset, false); offset += 4;
+        const headY = view.getFloat32(offset, false); offset += 4;
         const angle = view.getFloat32(offset, false); offset += 4;
+        const length = view.getFloat32(offset, false); offset += 4;
+        const cpCount = view.getUint16(offset, false); offset += 2;
 
-        const segments = [];
-        for (let s = 0; s < segCount; s++) {
-          const x = view.getFloat32(offset); offset += 4;
-          const y = view.getFloat32(offset); offset += 4;
-          const r = view.getUint8(offset++);
-          const g = view.getUint8(offset++);
-          const b = view.getUint8(offset++);
-          segments.push({ x, y, c: [r, g, b] });
+        // Decode delta-encoded control points
+        const controlPoints = [];
+        if (cpCount > 0) {
+          // First point is absolute (float32 x, y)
+          const firstX = view.getFloat32(offset, false); offset += 4;
+          const firstY = view.getFloat32(offset, false); offset += 4;
+          controlPoints.push({ x: firstX, y: firstY });
+
+          // Remaining points are int16 deltas
+          let currX = firstX;
+          let currY = firstY;
+          for (let p = 1; p < cpCount; p++) {
+            const deltaX = view.getInt16(offset, false); offset += 2;
+            const deltaY = view.getInt16(offset, false); offset += 2;
+            currX += deltaX;
+            currY += deltaY;
+            controlPoints.push({ x: currX, y: currY });
+          }
         }
 
+        // Decode skin pattern
+        const skinLen = view.getUint16(offset, false); offset += 2;
+        const skin = [];
+        for (let s = 0; s < skinLen; s++) {
+          const r = view.getFloat32(offset, false); offset += 4;
+          const g = view.getFloat32(offset, false); offset += 4;
+          const b = view.getFloat32(offset, false); offset += 4;
+          skin.push([r, g, b]);
+        }
+
+        // Decode nickname
         const nickLen = view.getUint16(offset, false); offset += 2;
         let nickname = "";
         if (nickLen > 0) {
@@ -172,7 +196,7 @@ async function connectSocket() {
           offset += nickLen;
         }
 
-        snakes.push({ id, angle, segments, nickname });
+        snakes.push({ id, headX, headY, angle, length, controlPoints, skin, nickname });
 
         if (nickname) {
           if (!nicknameElements[id]) {
@@ -481,7 +505,7 @@ function draw() {
     translate(-width / 2, -height / 2);
 
     const me = snakes.find((s) => s.id === mySnakeId);
-    const myHead = me && me.segments.length ? me.segments[0] : null;
+    const myHead = me ? { x: me.headX, y: me.headY } : null;
 
     push();
     if (myHead) {
@@ -498,22 +522,24 @@ function draw() {
 
     // Snakes
     for (let s of snakes) {
-      for (let i = s.segments.length - 1; i >= 0; i--) {
-        const seg = s.segments[i];
+      // Draw trail from control points
+      for (let i = 0; i < s.controlPoints.length; i++) {
+        const cp = s.controlPoints[i];
+        const skinIdx = Math.floor((i / s.controlPoints.length) * s.skin.length);
+        const [r, g, b] = s.skin[skinIdx];
+        
         push();
-        translate(seg.x, seg.y, 0);
+        translate(cp.x, cp.y, 0);
         noStroke();
-        // Use received RGB (seg.c is [r,g,b])
-        ambientMaterial(seg.c[0], seg.c[1], seg.c[2]);
+        ambientMaterial(r, g, b);
         sphere(10);
         pop();
       }
 
-      // For the head (first segment), override with red if it's the head
-      if (s.segments.length > 0) {
-        const head = s.segments[0];
+      // Draw head
+      if (myHead && s.id === mySnakeId) {
         push();
-        translate(head.x, head.y, 0);
+        translate(myHead.x, myHead.y, 0);
         rotateZ(s.angle);
         ambientMaterial(255, 0, 0); // Keep head red
         sphere(6);
@@ -522,21 +548,28 @@ function draw() {
         translate(0, -10, 0);
         sphere(2);
         pop();
+      } else if (s.headX && s.headY) {
+        push();
+        translate(s.headX, s.headY, 0);
+        rotateZ(s.angle);
+        ambientMaterial(255, 0, 0);
+        sphere(6);
+        translate(5, 5, 2);
+        sphere(2);
+        translate(0, -10, 0);
+        sphere(2);
+        pop();
+      }
 
-        // Update nickname DOM element position
-// Update nickname DOM element position
-if (s.nickname && nicknameElements[s.id]) {
-  let label = s.nickname;
-  if (s.isBot) {
-    label = `${s.nickname}<br>(Bot)`; // two lines
-  }
-  nicknameElements[s.id].html(label);
-
-  const screenX = width / 2 - (lastHeadPos.x - head.x);
-  const screenY = height / 2 - (lastHeadPos.y - head.y);
-  nicknameElements[s.id].position(screenX, screenY - 20);
-}
-
+      // Update nickname DOM element position
+      if (s.nickname && nicknameElements[s.id]) {
+        let label = s.nickname;
+        const headPos = (s.id === mySnakeId && myHead) ? myHead : { x: s.headX, y: s.headY };
+        
+        const screenX = width / 2 - (lastHeadPos.x - headPos.x);
+        const screenY = height / 2 - (lastHeadPos.y - headPos.y);
+        nicknameElements[s.id].html(label);
+        nicknameElements[s.id].position(screenX, screenY - 20);
       }
     }
 
@@ -556,10 +589,11 @@ if (s.nickname && nicknameElements[s.id]) {
 
     pop(); // camera
 
-    // HUD length as DOM overlay
+    // HUD length as DOM overlay (use control point count as proxy for length)
     if (mySnakeId && me) {
+      const displayLength = me.length || (me.controlPoints?.length * 5 || 0);
       if (!nicknameElements["hud"]) {
-        const hud = createP(`Length: ${me.segments.length}`);
+        const hud = createP(`Length: ${displayLength.toFixed(0)}`);
         hud.style("position", "absolute");
         hud.style("color", "white");
         hud.style("font", "16px Arial");
@@ -568,7 +602,7 @@ if (s.nickname && nicknameElements[s.id]) {
         hud.style("pointer-events", "none");
         nicknameElements["hud"] = hud;
       } else {
-        nicknameElements["hud"].html(`Length: ${me.segments.length}`);
+        nicknameElements["hud"].html(`Length: ${displayLength.toFixed(0)}`);
         nicknameElements["hud"].position(20, 20); // top-left corner
       }
     }
