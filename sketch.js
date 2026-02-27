@@ -3,15 +3,17 @@ let snakes = [];
 let foods = [];
 let mySnakeId = 0;
 
-const TYPE_VERSION = 1;
-const TYPE_SNAPSHOT = 1;
-const TYPE_GESTURE = 2;
-const TYPE_WINDOWSIZE = 3;
-const TYPE_MOUSE = 4;
-const TYPE_WORLDSIZE = 5;
-const TYPE_NICKNAME = 6;
-const TYPE_LEADERBOARD = 7;
-const TYPE_SKIN = 8;
+const GESTURE     = { id: 1, flag: ["uint",8] };
+const WINDOWSIZE  = { id: 2, width: ["float",32], height: ["float",32] };
+const MOUSE       = { id: 3, x: ["float",32], y: ["float",32] };
+const WORLDSIZE   = { id: 4, width: ["float",32], height: ["float",32] };
+const NICKNAME    = { id: 5, length: ["uint",16], nickname: "utf8" };
+const SKIN        = { id: 6, count: ["uint",32], colors: "float32[]", r: ["float",32], g: ["float",32], b: ["float",32] };
+const LEADERBOARD = { id: 7, count: ["uint",32], entries: "object[]" };
+const SNAPSHOT    = { id: 8, snakeCount: ["uint",32], snakes: "object[]", foodCount: ["uint",32], foods: "object[]" };
+const SNAKE = {mid: ["uint",32], segCount: ["uint",32], angle: ["float",32], segments: "object[]", nicknameLen: ["uint",16], nickname: "utf8", isBot: ["uint",8]};
+const SEGMENT = { x: ["float",32], y: ["float",32] };
+const FOOD = { x: ["float",32], y: ["float",32], size: ["float",32], d: ["uint",8] };
 
 let gameX = 0;
 let gameY = 0;
@@ -26,6 +28,12 @@ let nicknameElements = {};
 const LS_INDEX = "snake_skin_index";
 const LS_CUSTOM = "snake_custom_pattern";
 const LS_SHOWING = "snake_showing_custom";
+
+function getBytesfromBits(x) {
+    if (Array.isArray(x)) {
+        return x[1]/8;
+    }
+}
 
 function saveSkinState() {
   localStorage.setItem(LS_INDEX, index);
@@ -82,7 +90,7 @@ async function connectSocket() {
     const wsUrl = url.replace("http", "ws");
 
     // Connect to WebSocket server
-    socket = new WebSocket(wsUrl);
+    socket = new WebSocket("ws://localhost:8080");
     socket.binaryType = "arraybuffer";
 
     socket.onopen = () => {
@@ -97,28 +105,25 @@ async function connectSocket() {
       let offset = 0;
       if (view.byteLength < 1) return;
 
-      const version = view.getUint8(offset++);
-      if (version !== TYPE_VERSION) return;
-
       const type = view.getUint8(offset++);
 
       // World size packet
-      if (type === TYPE_WORLDSIZE) {
-        gameX = view.getFloat32(offset, false); offset += 4;
-        gameY = view.getFloat32(offset, false); offset += 4;
+      if (type === WORLDSIZE.id) {
+        gameX = view.getFloat32(offset, false); offset += getBytesfromBits(WORLDSIZE.width);
+        gameY = view.getFloat32(offset, false); offset += getBytesfromBits(WORLDSIZE.height);
         console.log("ðŸŒ World size received:", gameX, gameY);
         return;
       }
 
       // Leaderboard packet
-      if (type === TYPE_LEADERBOARD) {
-        const count = view.getUint32(offset, false); offset += 4;
+      if (type === LEADERBOARD.id) {
+        const count = view.getUint32(offset, false); offset += getBytesfromBits(LEADERBOARD.count);
         const leaderboard = [];
 
         for (let i = 0; i < count; i++) {
-          const length = view.getUint32(offset, false); offset += 4;
+          const length = view.getUint32(offset, false); offset += getBytesfromBits(SNAKE.segCount);
           const isBot = view.getUint8(offset++);
-          const nickLen = view.getUint16(offset, false); offset += 2;
+          const nickLen = view.getUint16(offset, false); offset += getBytesfromBits(SNAKE.nicknameLen);
 
           let nickname = "";
           if (nickLen > 0) {
@@ -142,28 +147,36 @@ async function connectSocket() {
       }
 
       // Snapshot packet
-      if (type !== TYPE_SNAPSHOT) return;
+      if (type !== SNAPSHOT.id) return;
 
-      mySnakeId = view.getUint32(offset, false); offset += 4;
+      mySnakeId = view.getUint32(offset, false); offset += getBytesfromBits(SNAKE.mid);
 
-      const snakeCount = view.getUint32(offset, false); offset += 4;
+      const snakeCount = view.getUint32(offset, false); offset += getBytesfromBits(SNAPSHOT.snakeCount);
       snakes = [];
       for (let i = 0; i < snakeCount; i++) {
-        const id = view.getUint32(offset, false); offset += 4;
-        const segCount = view.getUint32(offset, false); offset += 4;
-        const angle = view.getFloat32(offset, false); offset += 4;
+const id = view.getUint32(offset, false);
+offset += getBytesfromBits(SNAKE.mid);
+
+const isBot = view.getUint8(offset);
+offset += getBytesfromBits(SNAKE.isBot);
+
+const segCount = view.getUint32(offset, false);
+offset += getBytesfromBits(SNAKE.segCount);
+
+const angle = view.getFloat32(offset, false);
+offset += getBytesfromBits(SNAKE.angle);
 
         const segments = [];
         for (let s = 0; s < segCount; s++) {
-          const x = view.getFloat32(offset); offset += 4;
-          const y = view.getFloat32(offset); offset += 4;
+          const x = view.getFloat32(offset, false); offset += getBytesfromBits(SEGMENT.x);
+          const y = view.getFloat32(offset, false); offset += getBytesfromBits(SEGMENT.y);
           const r = view.getUint8(offset++);
           const g = view.getUint8(offset++);
           const b = view.getUint8(offset++);
           segments.push({ x, y, c: [r, g, b] });
         }
 
-        const nickLen = view.getUint16(offset, false); offset += 2;
+        const nickLen = view.getUint16(offset, false); offset += getBytesfromBits(SNAKE.nicknameLen);
         let nickname = "";
         if (nickLen > 0) {
           const nickBytes = new Uint8Array(event.data, offset, nickLen);
@@ -171,7 +184,7 @@ async function connectSocket() {
           offset += nickLen;
         }
 
-        snakes.push({ id, angle, segments, nickname });
+snakes.push({ id, isBot: !!isBot, angle, segments, nickname });
 
         if (nickname) {
           if (!nicknameElements[id]) {
@@ -199,13 +212,13 @@ async function connectSocket() {
       }
 
       // Foods
-      const foodCount = view.getUint32(offset, false); offset += 4;
+      const foodCount = view.getUint32(offset, false); offset += getBytesfromBits(SNAPSHOT.foodCount);
       foods = [];
       for (let i = 0; i < foodCount; i++) {
-        const x = view.getFloat32(offset, false); offset += 4;
-        const y = view.getFloat32(offset, false); offset += 4;
-        const s = view.getFloat32(offset, false); offset += 4;
-        const d = view.getUint8(offset); offset += 1;
+        const x = view.getFloat32(offset, false); offset += getBytesfromBits(FOOD.x);
+        const y = view.getFloat32(offset, false); offset += getBytesfromBits(FOOD.y);
+        const s = view.getFloat32(offset, false); offset += getBytesfromBits(FOOD.size);
+        const d = view.getUint8(offset); offset += getBytesfromBits(FOOD.d);
         foods.push({ x, y, s, d });
       }
     };
@@ -574,13 +587,12 @@ if (s.nickname && nicknameElements[s.id]) {
 
     // Send mouse (throttled)
     if (socket.readyState === WebSocket.OPEN && (++frameCounter % 3) === 0) {
-      const buffer = new ArrayBuffer(1 + 1 + 8);
+      const buffer = new ArrayBuffer(1 + (getBytesfromBits(MOUSE.x) + getBytesfromBits(MOUSE.y)));
       const view = new DataView(buffer);
       let o = 0;
-      view.setUint8(o++, TYPE_VERSION);
-      view.setUint8(o++, TYPE_MOUSE);
-      view.setFloat32(o, mouseX, false); o += 4;
-      view.setFloat32(o, mouseY, false); o += 4;
+      view.setUint8(o++, MOUSE.id);
+      view.setFloat32(o, mouseX, false); o += getBytesfromBits(MOUSE.x);
+      view.setFloat32(o, mouseY, false); o += getBytesfromBits(MOUSE.y);
       socket.send(buffer);
     }
   }
@@ -588,24 +600,22 @@ if (s.nickname && nicknameElements[s.id]) {
 
 function sendGesture(flag) {
   if (socket.readyState !== WebSocket.OPEN) return;
-  const buffer = new ArrayBuffer(1 + 1 + 1);
+  const buffer = new ArrayBuffer(1 + getBytesfromBits(GESTURE.flag));
   const view = new DataView(buffer);
   let o = 0;
-  view.setUint8(o++, TYPE_VERSION);
-  view.setUint8(o++, TYPE_GESTURE);
+  view.setUint8(o++, GESTURE.id);
   view.setUint8(o++, flag);
   socket.send(buffer);
 }
 
 function sendWindowSize() {
   if (socket.readyState !== WebSocket.OPEN) return;
-  const buffer = new ArrayBuffer(1 + 1 + 8);
+  const buffer = new ArrayBuffer(1 + getBytesfromBits(WINDOWSIZE.width) + getBytesfromBits(WINDOWSIZE.height));
   const view = new DataView(buffer);
   let o = 0;
-  view.setUint8(o++, TYPE_VERSION);
-  view.setUint8(o++, TYPE_WINDOWSIZE);
-  view.setFloat32(o, width, false); o += 4;
-  view.setFloat32(o, height, false); o += 4;
+  view.setUint8(o++, WINDOWSIZE.id);
+  view.setFloat32(o, width, false); o += getBytesfromBits(WINDOWSIZE.width);
+  view.setFloat32(o, height, false); o += getBytesfromBits(WINDOWSIZE.height);
   socket.send(buffer);
 }
 
@@ -622,24 +632,17 @@ function sendNickname(nick) {
   // type (1 byte)
   // length (2 bytes, unsigned)
   // nickname (UTFâ€‘8 bytes)
-  const buffer = new ArrayBuffer(1 + 1 + 2 + nickBytes.length);
-  const view = new DataView(buffer);
-  let offset = 0;
+const buffer = new ArrayBuffer(1 + 2 + nickBytes.length);
+const view = new DataView(buffer);
+let offset = 0;
 
-  // Protocol version
-  view.setUint8(offset++, TYPE_VERSION);
+view.setUint8(offset++, NICKNAME.id);
+view.setUint16(offset, nickBytes.length, false);
+offset += 2;
 
-  // Message type
-  view.setUint8(offset++, TYPE_NICKNAME);
-
-  // Nickname length
-  view.setUint16(offset, nickBytes.length, false);
-  offset += 2;
-
-  // Nickname bytes
-  for (let i = 0; i < nickBytes.length; i++) {
-    view.setUint8(offset++, nickBytes[i]);
-  }
+for (let i = 0; i < nickBytes.length; i++) {
+  view.setUint8(offset++, nickBytes[i]);
+}
 
   // Send to server
   socket.send(buffer);
@@ -691,20 +694,27 @@ function windowResized() {
 }
 
 function sendSkin(pattern) {
-  const buf = new ArrayBuffer(1 + 1 + 4 + pattern.length * 12);
-  const dv = new DataView(buf);
+  if (!socket || socket.readyState !== WebSocket.OPEN) return;
+
+  const buffer = new ArrayBuffer(
+    1 + 4 + pattern.length * 12
+  );
+
+  const dv = new DataView(buffer);
   let offset = 0;
-  dv.setUint8(offset++, TYPE_VERSION); // âš¡ Was VERSION
-  dv.setUint8(offset++, TYPE_SKIN);
-  dv.setUint32(offset, pattern.length, false); offset += 4;
+
+  dv.setUint8(offset++, SKIN.id);
+  dv.setUint32(offset, pattern.length, false);
+  offset += 4;
+
   for (const [r,g,b] of pattern) {
     dv.setFloat32(offset, r, false); offset += 4;
     dv.setFloat32(offset, g, false); offset += 4;
     dv.setFloat32(offset, b, false); offset += 4;
   }
-  socket.send(buf);
-}
 
+  socket.send(buffer);
+}
 
 function cssToRGB(colorName) {
   const ctx = document.createElement("canvas").getContext("2d");
