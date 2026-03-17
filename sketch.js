@@ -21,6 +21,8 @@ let frameCounter = 0;
 let lastHeadPos = { x: 0, y: 0 };
 let state = 0;
 let lastLeaderboard = [];
+let leaderboard2;
+let leaderboardData = [];
 let customPattern = null;
 let customCode = null;
 let showingCustom = false; // track current view
@@ -116,35 +118,31 @@ async function connectSocket() {
       }
 
       // Leaderboard packet
-      if (type === LEADERBOARD.id) {
-        const count = view.getUint32(offset, false); offset += getBytesfromBits(LEADERBOARD.count);
-        const leaderboard = [];
+// store latest leaderboard whenever a packet arrives
+if (type === LEADERBOARD.id) {
+    leaderboardData = []; // reset
+    const count = view.getUint32(offset, false); offset += getBytesfromBits(LEADERBOARD.count);
 
-        for (let i = 0; i < count; i++) {
-          const length = view.getUint32(offset, false); offset += getBytesfromBits(SNAKE.segCount);
-          const isBot = view.getUint8(offset++);
-          const nickLen = view.getUint16(offset, false); offset += getBytesfromBits(SNAKE.nicknameLen);
+    for (let i = 0; i < count; i++) {
+        const length = view.getUint32(offset, false); offset += getBytesfromBits(SNAKE.segCount);
+        const isBot = view.getUint8(offset++);
+        const nickLen = view.getUint16(offset, false); offset += getBytesfromBits(SNAKE.nicknameLen);
 
-          let nickname = "";
-          if (nickLen > 0) {
+        let nickname = "";
+        if (nickLen > 0) {
             const nickBytes = new Uint8Array(event.data, offset, nickLen);
             nickname = new TextDecoder().decode(nickBytes);
             offset += nickLen;
-          }
-
-          leaderboard.push({ nickname, isBot: !!isBot, length });
         }
 
-        if (state === 1) {
-          if (leaderboard.length > 0) {
-            lastLeaderboard = leaderboard;
-          }
-          if (lastLeaderboard.length > 0) {
-            renderLeaderboard(lastLeaderboard);
-          }
-        }
-        return;
-      }
+        leaderboardData.push({ nickname, isBot: !!isBot, length });
+    }
+}
+
+// inside draw(), every frame
+if (state === 1 && leaderboardData.length > 0) {
+    renderLeaderboard(leaderboardData);
+}
 
       // Snapshot packet
       if (type !== SNAPSHOT.id) return;
@@ -484,7 +482,12 @@ function draw() {
     document.getElementById("nick").innerHTML = ``;
     document.getElementById("change").innerHTML = ``;
     document.getElementById("build").innerHTML = ``;
-
+    if (leaderboardData.length > 0) {
+      leaderboard2 = leaderboardData;
+    }
+if (state === 1) {
+    renderLeaderboard(leaderboardData.length > 0 ? leaderboardData : leaderboard2);
+}
     background(20);
     ambientLight(80);
     directionalLight(255, 255, 255, 0.5, -1, -0.5);
