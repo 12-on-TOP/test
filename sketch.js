@@ -92,7 +92,7 @@ async function connectSocket() {
     const wsUrl = url.replace("http", "ws");
 
     // Connect to WebSocket server
-    socket = new WebSocket("ws://localhost:8080");
+    socket = new WebSocket(wsUrl);
     socket.binaryType = "arraybuffer";
 
     socket.onopen = () => {
