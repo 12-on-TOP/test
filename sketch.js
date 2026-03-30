@@ -2,6 +2,7 @@ let socket;
 let snakes = [];
 let foods = [];
 let mySnakeId = 0;
+let pendingNickname = "";
 
 const GESTURE     = { id: 1, flag: ["uint",8] };
 const WINDOWSIZE  = { id: 2, width: ["float",32], height: ["float",32] };
@@ -94,11 +95,20 @@ async function connectSocket() {
     // Connect to WebSocket server
     socket = new WebSocket(wsUrl);
     socket.binaryType = "arraybuffer";
+socket.onopen = () => {
+  console.log("ðŸŸ¢ Connected");
 
-    socket.onopen = () => {
-      console.log("ðŸŸ¢ Connected to server", wsUrl);
-      sendWindowSize();
-    };
+  sendWindowSize();
+
+  sendNickname(pendingNickname); // âœ… SAFE (no DOM access)
+
+  const chosenColour = showingCustom && customPattern
+    ? customPattern
+    : Array.from({ length: 30 }, () => colours[index]);
+
+  const pattern = chosenColour.map(cssToRGB);
+  sendSkin(pattern);
+};
 
 
 
@@ -145,81 +155,77 @@ if (state === 1 && leaderboardData.length > 0) {
 }
 
       // Snapshot packet
-      if (type !== SNAPSHOT.id) return;
+    if (type === SNAPSHOT.id) {
+    snakes = [];
+    foods = [];
 
-      mySnakeId = view.getUint32(offset, false); offset += getBytesfromBits(SNAKE.mid);
+    mySnakeId = view.getUint32(offset, false);
+    offset += 4;
 
-      const snakeCount = view.getUint32(offset, false); offset += getBytesfromBits(SNAPSHOT.snakeCount);
-      snakes = [];
-      for (let i = 0; i < snakeCount; i++) {
-const id = view.getUint32(offset, false);
-offset += getBytesfromBits(SNAKE.mid);
+    const snakeCount = view.getUint32(offset, false);
+    offset += 4;
 
-const isBot = view.getUint8(offset);
-offset += getBytesfromBits(SNAKE.isBot);
+    for (let i = 0; i < snakeCount; i++) {
 
-const segCount = view.getUint32(offset, false);
-offset += getBytesfromBits(SNAKE.segCount);
+        const id = view.getUint32(offset, false);
+        offset += 4;
 
-const angle = view.getFloat32(offset, false);
-offset += getBytesfromBits(SNAKE.angle);
+        const isBot = view.getUint8(offset++);
+        
+        const visibleSegCount = view.getUint32(offset, false);
+        offset += 4;
+
+        const fullLength = view.getUint32(offset, false);
+        offset += 4;
+
+        const angle = view.getFloat32(offset, false);
+        offset += 4;
 
         const segments = [];
-        for (let s = 0; s < segCount; s++) {
-          const x = view.getFloat32(offset, false); offset += getBytesfromBits(SEGMENT.x);
-          const y = view.getFloat32(offset, false); offset += getBytesfromBits(SEGMENT.y);
-          const r = view.getUint8(offset++);
-          const g = view.getUint8(offset++);
-          const b = view.getUint8(offset++);
-          segments.push({ x, y, c: [r, g, b] });
+        for (let s = 0; s < visibleSegCount; s++) {
+            const x = view.getFloat32(offset, false); offset += 4;
+            const y = view.getFloat32(offset, false); offset += 4;
+            const r = view.getUint8(offset++);
+            const g = view.getUint8(offset++);
+            const b = view.getUint8(offset++);
+            segments.push({ x, y, c: [r, g, b] });
         }
 
-        const nickLen = view.getUint16(offset, false); offset += getBytesfromBits(SNAKE.nicknameLen);
+        const nickLen = view.getUint16(offset, false);
+        offset += 2;
+
         let nickname = "";
         if (nickLen > 0) {
-          const nickBytes = new Uint8Array(event.data, offset, nickLen);
-          nickname = new TextDecoder().decode(nickBytes);
-          offset += nickLen;
+            const bytes = new Uint8Array(event.data, offset, nickLen);
+            nickname = new TextDecoder().decode(bytes);
+            offset += nickLen;
         }
 
-snakes.push({ id, isBot: !!isBot, angle, segments, nickname });
+        snakes.push({
+            id,
+            isBot,
+            angle,
+            segments,
+            fullLength,
+            nickname
+        });
+    }
 
-        if (nickname) {
-          if (!nicknameElements[id]) {
-            const p = createP(nickname);
-            p.style("position", "absolute");
-            p.style("color", "white");
-            p.style("font", "16px Arial");
-            p.style("margin", "0");
-            p.style("padding", "0");
-            p.style("pointer-events", "none");
-            nicknameElements[id] = p;
-          } else {
-            nicknameElements[id].html(nickname);
-          }
-        }
-      }
+    const foodCount = view.getUint32(offset, false);
+    offset += 4;
 
-      // Cleanup ghost nicknames
-      const activeIds = new Set(snakes.map(s => s.id));
-      for (const id in nicknameElements) {
-        if (id !== "hud" && !activeIds.has(Number(id))) {
-          nicknameElements[id].remove();
-          delete nicknameElements[id];
-        }
-      }
-
-      // Foods
-      const foodCount = view.getUint32(offset, false); offset += getBytesfromBits(SNAPSHOT.foodCount);
-      foods = [];
-      for (let i = 0; i < foodCount; i++) {
-        const x = view.getFloat32(offset, false); offset += getBytesfromBits(FOOD.x);
-        const y = view.getFloat32(offset, false); offset += getBytesfromBits(FOOD.y);
-        const s = view.getFloat32(offset, false); offset += getBytesfromBits(FOOD.size);
-        const d = view.getUint8(offset); offset += getBytesfromBits(FOOD.d);
+    for (let i = 0; i < foodCount; i++) {
+        const x = view.getFloat32(offset, false); offset += 4;
+        const y = view.getFloat32(offset, false); offset += 4;
+        const s = view.getFloat32(offset, false); offset += 4;
+        const d = view.getUint8(offset++);
         foods.push({ x, y, s, d });
-      }
-    };
+    }
+
+    return;
+}
+
+    }
 
     socket.onclose = () => console.log("ðŸ”´ Disconnected from server");
     socket.onerror = (err) => console.error("WebSocket error", err);
@@ -234,24 +240,27 @@ function setup() {
   createCanvas(windowWidth, windowHeight, WEBGL);
   frameRate(60);
   loadSkinState();
-  connectSocket();
   setTimeout(changeSkin, 0);
 }
 
 function play() {
-  const nickname = document.getElementById("myDiv").innerText;
-  sendNickname(nickname);
+  const el = document.getElementById("myDiv");
 
-  // Use the chosen colour from your palette
-  const chosenColour = showingCustom && customPattern
-    ? customPattern
-    : Array.from({ length: 30 }, () => colours[index]);
+  if (!el) {
+    console.error("myDiv missing");
+    return;
+  }
 
-  // Convert CSS colour names to RGB
-  const pattern = chosenColour.map(cssToRGB);
+  pendingNickname = el.innerText.trim(); // âœ… store it FIRST
 
-  sendSkin(pattern);
+  state = 1;
+  loop();
+
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    connectSocket();
+  }
 }
+
 
 
 let index = 0;
@@ -540,18 +549,40 @@ if (state === 1) {
 
         // Update nickname DOM element position
 // Update nickname DOM element position
-if (s.nickname && nicknameElements[s.id]) {
+if (s.nickname) {
+  // CREATE if it doesn't exist
+  if (!nicknameElements[s.id]) {
+    const labelDiv = createDiv("");
+    labelDiv.style("position", "absolute");
+    labelDiv.style("color", "white");
+    labelDiv.style("font", "14px Arial");
+    labelDiv.style("text-align", "center");
+    labelDiv.style("pointer-events", "none");
+    nicknameElements[s.id] = labelDiv;
+  }
+
+  // UPDATE text
   let label = s.nickname;
   if (s.isBot) {
-    label = `${s.nickname}<br>(Bot)`; // two lines
+    label = `${s.nickname}<br>(Bot)`;
   }
   nicknameElements[s.id].html(label);
 
+  // UPDATE position
   const screenX = width / 2 - (lastHeadPos.x - head.x);
   const screenY = height / 2 - (lastHeadPos.y - head.y);
   nicknameElements[s.id].position(screenX, screenY - 20);
 }
+const activeIds = new Set(snakes.map(s => s.id));
 
+for (const id in nicknameElements) {
+  if (id === "hud" || id === "leaderboard") continue;
+
+  if (!activeIds.has(Number(id))) {
+    nicknameElements[id].remove();
+    delete nicknameElements[id];
+  }
+}
       }
     }
 
@@ -589,7 +620,7 @@ if (s.nickname && nicknameElements[s.id]) {
     }
 
     // Send mouse (throttled)
-    if (socket.readyState === WebSocket.OPEN && (++frameCounter % 3) === 0) {
+    if (socket && socket.readyState && socket.readyState === WebSocket.OPEN && (++frameCounter % 3) === 0) {
       const buffer = new ArrayBuffer(1 + (getBytesfromBits(MOUSE.x) + getBytesfromBits(MOUSE.y)));
       const view = new DataView(buffer);
       let o = 0;
@@ -602,17 +633,21 @@ if (s.nickname && nicknameElements[s.id]) {
 }
 
 function sendGesture(flag) {
-  if (socket.readyState !== WebSocket.OPEN) return;
-  const buffer = new ArrayBuffer(1 + getBytesfromBits(GESTURE.flag));
-  const view = new DataView(buffer);
-  let o = 0;
-  view.setUint8(o++, GESTURE.id);
-  view.setUint8(o++, flag);
-  socket.send(buffer);
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+
+    const buffer = new ArrayBuffer(1 + getBytesfromBits(GESTURE.flag));
+    const view = new DataView(buffer);
+    let o = 0;
+
+    view.setUint8(o++, GESTURE.id);
+    view.setUint8(o++, flag);
+
+    socket.send(buffer);
 }
 
+
 function sendWindowSize() {
-  if (socket.readyState !== WebSocket.OPEN) return;
+  if (!socket.readyState && socket.readyState !== WebSocket.OPEN) return;
   const buffer = new ArrayBuffer(1 + getBytesfromBits(WINDOWSIZE.width) + getBytesfromBits(WINDOWSIZE.height));
   const view = new DataView(buffer);
   let o = 0;
@@ -653,6 +688,8 @@ for (let i = 0; i < nickBytes.length; i++) {
 
 function renderLeaderboard(entries) {
   if (state !== 1) return;
+  if (!socket || socket.readyState !== WebSocket.OPEN) return;
+  if (!entries || !Array.isArray(entries) || entries.length === 0) return;
 
   let html = "<h3 style='color:white;margin:0'>Leaderboard</h3><ul style='color:white;padding-left:20px'>";
   entries.forEach((entry, index) => {
@@ -689,8 +726,12 @@ function keyPressed() {
 function keyReleased() {
   if (key === "ArrowUp" || key === " " || key === "w") sendGesture(0);
 }
-function mousePressed() { sendGesture(1); }
-function mouseReleased() { sendGesture(0); }
+function mousePressed() {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    sendGesture(1);
+}
+
+function mouseReleased() {if (!socket || socket.readyState !== WebSocket.OPEN) return; sendGesture(0); }
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
   sendWindowSize();
