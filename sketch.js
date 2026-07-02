@@ -18,6 +18,7 @@ const FOOD = { x: ["float",32], y: ["float",32], size: ["float",32], d: ["uint",
 
 let gameX = 0;
 let gameY = 0;
+let aliveIds = new Set();
 let frameCounter = 0;
 let lastHeadPos = { x: 0, y: 0 };
 let state = 0;
@@ -93,14 +94,15 @@ async function connectSocket() {
     const wsUrl = url.replace("http", "ws");
 
     // Connect to WebSocket server
-    socket = new WebSocket(wsUrl);
+    //socket = new WebSocket(wsUrl);
+    socket = new WebSocket("ws://localhost:8080");
     socket.binaryType = "arraybuffer";
 socket.onopen = () => {
-  console.log("ðŸŸ¢ Connected");
+  console.log("🟢 Connected");
 
   sendWindowSize();
 
-  sendNickname(pendingNickname); // âœ… SAFE (no DOM access)
+  sendNickname(pendingNickname); // ✅ SAFE (no DOM access)
 
   const chosenColour = showingCustom && customPattern
     ? customPattern
@@ -123,7 +125,7 @@ socket.onopen = () => {
       if (type === WORLDSIZE.id) {
         gameX = view.getFloat32(offset, false); offset += getBytesfromBits(WORLDSIZE.width);
         gameY = view.getFloat32(offset, false); offset += getBytesfromBits(WORLDSIZE.height);
-        console.log("ðŸŒ World size received:", gameX, gameY);
+        console.log("🌍 World size received:", gameX, gameY);
         return;
       }
 
@@ -227,11 +229,11 @@ if (state === 1 && leaderboardData.length > 0) {
 
     }
 
-    socket.onclose = () => console.log("ðŸ”´ Disconnected from server");
+    socket.onclose = () => console.log("🔴 Disconnected from server");
     socket.onerror = (err) => console.error("WebSocket error", err);
 
   } catch (err) {
-    console.error("âŒ Error connecting:", err);
+    console.error("❌ Error connecting:", err);
   }
 }
 
@@ -251,7 +253,7 @@ function play() {
     return;
   }
 
-  pendingNickname = el.innerText.trim(); // âœ… store it FIRST
+  pendingNickname = el.innerText.trim(); // ✅ store it FIRST
 
   state = 1;
   loop();
@@ -506,7 +508,7 @@ if (state === 1) {
 
     const me = snakes.find((s) => s.id === mySnakeId);
     const myHead = me && me.segments.length ? me.segments[0] : null;
-
+aliveIds.clear();
     push();
     if (myHead) {
       lastHeadPos = { x: myHead.x, y: myHead.y };
@@ -524,6 +526,7 @@ if (state === 1) {
     for (let s of snakes) {
       for (let i = s.segments.length - 1; i >= 0; i--) {
         const seg = s.segments[i];
+        aliveIds.add(s.id);
         push();
         translate(seg.x, seg.y, 0);
         noStroke();
@@ -573,19 +576,24 @@ if (s.nickname) {
   const screenY = height / 2 - (lastHeadPos.y - head.y);
   nicknameElements[s.id].position(screenX, screenY - 20);
 }
-const activeIds = new Set(snakes.map(s => s.id));
-
+      }
+    }
 for (const id in nicknameElements) {
   if (id === "hud" || id === "leaderboard") continue;
 
-  if (!activeIds.has(Number(id))) {
+  const numId = Number(id);
+
+  // remove snake labels if snake is gone
+  if (!aliveIds.has(numId)) {
     nicknameElements[id].remove();
     delete nicknameElements[id];
   }
 }
-      }
-    }
-
+const meStillAlive = snakes.some(s => s.id === mySnakeId);
+if (!meStillAlive && nicknameElements["hud"]) {
+  nicknameElements["hud"].remove();
+  delete nicknameElements["hud"];
+}
     // Foods
     for (let f of foods) {
       push();
@@ -661,7 +669,7 @@ function sendNickname(nick) {
   state=1;loop();
   if (!socket || socket.readyState !== WebSocket.OPEN) return;
 
-  // Encode nickname as UTFâ€‘8
+  // Encode nickname as UTF‑8
   const encoder = new TextEncoder();
   const nickBytes = encoder.encode(nick);
 
@@ -669,7 +677,7 @@ function sendNickname(nick) {
   // version (1 byte)
   // type (1 byte)
   // length (2 bytes, unsigned)
-  // nickname (UTFâ€‘8 bytes)
+  // nickname (UTF‑8 bytes)
 const buffer = new ArrayBuffer(1 + 2 + nickBytes.length);
 const view = new DataView(buffer);
 let offset = 0;
