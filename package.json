@@ -5,7 +5,7 @@
   "main": "e.mjs",
   "type": "module",
   "scripts": {
-    "start": "node game.mjs",
+    "start": "node game.mjs"
   },
   "keywords": [],
   "author": "",
