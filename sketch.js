@@ -94,15 +94,15 @@ async function connectSocket() {
     const wsUrl = url.replace("http", "ws");
 
     // Connect to WebSocket server
-    socket = new WebSocket("wss://test-ixft.onrender.com/");
+    socket = new WebSocket(wsUrl);
     // socket = new WebSocket("ws://localhost:8080");
     socket.binaryType = "arraybuffer";
 socket.onopen = () => {
-  console.log("🟢 Connected");
+  console.log("ðŸŸ¢ Connected");
 
   sendWindowSize();
 
-  sendNickname(pendingNickname); // ✅ SAFE (no DOM access)
+  sendNickname(pendingNickname); // âœ… SAFE (no DOM access)
 
   const chosenColour = showingCustom && customPattern
     ? customPattern
@@ -125,7 +125,7 @@ socket.onopen = () => {
       if (type === WORLDSIZE.id) {
         gameX = view.getFloat32(offset, false); offset += getBytesfromBits(WORLDSIZE.width);
         gameY = view.getFloat32(offset, false); offset += getBytesfromBits(WORLDSIZE.height);
-        console.log("🌍 World size received:", gameX, gameY);
+        console.log("ðŸŒ World size received:", gameX, gameY);
         return;
       }
 
@@ -229,11 +229,11 @@ if (state === 1 && leaderboardData.length > 0) {
 
     }
 
-    socket.onclose = () => console.log("🔴 Disconnected from server");
+    socket.onclose = () => console.log("ðŸ”´ Disconnected from server");
     socket.onerror = (err) => console.error("WebSocket error", err);
 
   } catch (err) {
-    console.error("❌ Error connecting:", err);
+    console.error("âŒ Error connecting:", err);
   }
 }
 
@@ -253,7 +253,7 @@ function play() {
     return;
   }
 
-  pendingNickname = el.innerText.trim(); // ✅ store it FIRST
+  pendingNickname = el.innerText.trim(); // âœ… store it FIRST
 
   state = 1;
   loop();
@@ -669,7 +669,7 @@ function sendNickname(nick) {
   state=1;loop();
   if (!socket || socket.readyState !== WebSocket.OPEN) return;
 
-  // Encode nickname as UTF‑8
+  // Encode nickname as UTFâ€‘8
   const encoder = new TextEncoder();
   const nickBytes = encoder.encode(nick);
 
@@ -677,7 +677,7 @@ function sendNickname(nick) {
   // version (1 byte)
   // type (1 byte)
   // length (2 bytes, unsigned)
-  // nickname (UTF‑8 bytes)
+  // nickname (UTFâ€‘8 bytes)
 const buffer = new ArrayBuffer(1 + 2 + nickBytes.length);
 const view = new DataView(buffer);
 let offset = 0;
