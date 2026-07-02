@@ -5,11 +5,7 @@
   "main": "e.mjs",
   "type": "module",
   "scripts": {
-    "start": "npm run e",
-    "e": "npm-run-all --parallel server tunnel",
-    "server": "node refa.mjs",
-    "tunnel": "cloudflared tunnel --url http://localhost:8080",
-    "play": "node game2.mjs"
+    "start": "node game.mjs",
   },
   "keywords": [],
   "author": "",
