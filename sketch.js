@@ -94,7 +94,7 @@ async function connectSocket() {
     const wsUrl = url.replace("http", "ws");
 
     // Connect to WebSocket server
-    socket = new WebSocket(wsUrl);
+    socket = new WebSocket("ws://test-ixft.onrender.com/");
     // socket = new WebSocket("ws://localhost:8080");
     socket.binaryType = "arraybuffer";
 socket.onopen = () => {
