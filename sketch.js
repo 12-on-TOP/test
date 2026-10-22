@@ -7,18 +7,19 @@ let size;
 
 function setup() {
   createCanvas(400,400);
-async () => {
+(async () => {
   try {
     const r = await fetch("https://12-on-top.github.io/test/current_tunnel.txt");
     if (!r.ok) {
       throw new Error(`Failed to fetch ${r} with status ${r.status}`);
     }
     let testing = false;
-    const e = (await response.text()).trim().url.replace("https", "ws");
-  s = new WebSocket(testing?"ws://localhost:8080":e);
+    const e = (await r.text()).trim().replace("https", "ws");
+  s = new WebSocket(testing===true?"ws://localhost:8080":e);
+
 
   s.onopen = () => {
-    console.log("Connected to server",);
+    console.log("Connected to server");
   };
 
   s.onmessage = (event) => {
@@ -40,7 +41,7 @@ async () => {
   } catch(e) {
     console.error(e)
   }
-}
+})()
 }
 
 let ghost;
