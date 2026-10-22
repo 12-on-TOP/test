@@ -14,7 +14,7 @@ function setup() {
       throw new Error(`Failed to fetch ${r} with status ${r.status}`);
     }
     let testing = false;
-    const e = (await r.text()).trim().replace("https", "ws");
+    const e = (await r.text()).trim().replace("https", "wss");
   s = new WebSocket(testing===true?"ws://localhost:8080":e);
 
 
