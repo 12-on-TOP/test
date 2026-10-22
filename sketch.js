@@ -14,7 +14,7 @@ async () => {
       throw new Error(`Failed to fetch ${r} with status ${r.status}`);
     }
     let testing = false;
-    const e = (await response.text()).trim().url.replace("http", "ws");
+    const e = (await response.text()).trim().url.replace("https", "ws");
   s = new WebSocket(testing?"ws://localhost:8080":e);
 
   s.onopen = () => {
